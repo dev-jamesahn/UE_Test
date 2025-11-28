@@ -7,8 +7,8 @@ $global:ModemList = @()    # 모뎀 리스트
 
 # ----- Main Form -----
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "2UE iperf3 + Modem AT All-in-One"
-$form.ClientSize = New-Object System.Drawing.Size(1000, 750)   # 넉넉하게
+$form.Text = "my5G UE Test Tool"
+$form.ClientSize = New-Object System.Drawing.Size(950, 820)   # 넉넉하게
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
@@ -56,9 +56,61 @@ function Set-DarkCheckBoxStyle($cb) {
 [int]$gap = 8
 [int]$y = 20
 
+# ----- Route Button (Admin CMD) -----
+$buttonRouteAdmin = New-Object System.Windows.Forms.Button
+$buttonRouteAdmin.Text = "Add Route (UE - iPerf Server)"
+$buttonRouteAdmin.Location = New-Object System.Drawing.Point($labelX, $y)
+$buttonRouteAdmin.Size = New-Object System.Drawing.Size(370, 30)
+Set-DarkButtonStyle $buttonRouteAdmin
+$form.Controls.Add($buttonRouteAdmin)
+
+$y += $height + (4 * $gap)
+
+# =========================================================
+#   Remote NDIS IP List (자동 검색 + 선택 적용)
+# =========================================================
+[int]$ndisTopY = $y
+
+$labelNdis = New-Object System.Windows.Forms.Label
+$labelNdis.Text = "Remote NDIS Compatible Device IPv4 List"
+$labelNdis.Location = New-Object System.Drawing.Point($labelX, $ndisTopY)
+$labelNdis.Size = New-Object System.Drawing.Size(260, $height)
+Set-DarkLabelStyle $labelNdis
+$form.Controls.Add($labelNdis)
+
+$listNdis = New-Object System.Windows.Forms.ListBox
+$listNdis.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height))
+$listNdis.Size = New-Object System.Drawing.Size(370, 100)
+$listNdis.BackColor = $textBgColor
+$listNdis.ForeColor = $textFgColor
+$form.Controls.Add($listNdis)
+
+$btnNdisRefresh = New-Object System.Windows.Forms.Button
+$btnNdisRefresh.Text = "Refresh UE IP"
+$btnNdisRefresh.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height + 110))
+$btnNdisRefresh.Size = New-Object System.Drawing.Size(120, 30)
+Set-DarkButtonStyle $btnNdisRefresh
+$form.Controls.Add($btnNdisRefresh)
+
+$btnApplyUe1 = New-Object System.Windows.Forms.Button
+$btnApplyUe1.Text = "Apply to UE1"
+$btnApplyUe1.Location = New-Object System.Drawing.Point(($labelX + 130), ($ndisTopY + $height + 110))
+$btnApplyUe1.Size = New-Object System.Drawing.Size(100, 30)
+Set-DarkButtonStyle $btnApplyUe1
+$form.Controls.Add($btnApplyUe1)
+
+$btnApplyUe2 = New-Object System.Windows.Forms.Button
+$btnApplyUe2.Text = "Apply to UE2"
+$btnApplyUe2.Location = New-Object System.Drawing.Point(($labelX + 240), ($ndisTopY + $height + 110))
+$btnApplyUe2.Size = New-Object System.Drawing.Size(100, 30)
+Set-DarkButtonStyle $btnApplyUe2
+$form.Controls.Add($btnApplyUe2)
+
+$y = $ndisTopY + $height + 110 + 40 + (2 * $gap)
+
 # ----- Server IP -----
 $labelServerIp = New-Object System.Windows.Forms.Label
-$labelServerIp.Text = "Server IP"
+$labelServerIp.Text = "iPerf Server IP"
 $labelServerIp.Location = New-Object System.Drawing.Point($labelX, $y)
 $labelServerIp.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelServerIp
@@ -230,48 +282,6 @@ $form.Controls.Add($textBindIp2)
 
 $y += $height + $gap
 
-# =========================================================
-#   Remote NDIS IP List (자동 검색 + 선택 적용)
-# =========================================================
-[int]$ndisTopY = $y
-
-$labelNdis = New-Object System.Windows.Forms.Label
-$labelNdis.Text = "Remote NDIS Compatible Device IPv4:"
-$labelNdis.Location = New-Object System.Drawing.Point($labelX, $ndisTopY)
-$labelNdis.Size = New-Object System.Drawing.Size(260, $height)
-Set-DarkLabelStyle $labelNdis
-$form.Controls.Add($labelNdis)
-
-$listNdis = New-Object System.Windows.Forms.ListBox
-$listNdis.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height))
-$listNdis.Size = New-Object System.Drawing.Size(370, 100)
-$listNdis.BackColor = $textBgColor
-$listNdis.ForeColor = $textFgColor
-$form.Controls.Add($listNdis)
-
-$btnNdisRefresh = New-Object System.Windows.Forms.Button
-$btnNdisRefresh.Text = "Refresh NDIS IPs"
-$btnNdisRefresh.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height + 110))
-$btnNdisRefresh.Size = New-Object System.Drawing.Size(120, 30)
-Set-DarkButtonStyle $btnNdisRefresh
-$form.Controls.Add($btnNdisRefresh)
-
-$btnApplyUe1 = New-Object System.Windows.Forms.Button
-$btnApplyUe1.Text = "Apply to UE1"
-$btnApplyUe1.Location = New-Object System.Drawing.Point(($labelX + 130), ($ndisTopY + $height + 110))
-$btnApplyUe1.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnApplyUe1
-$form.Controls.Add($btnApplyUe1)
-
-$btnApplyUe2 = New-Object System.Windows.Forms.Button
-$btnApplyUe2.Text = "Apply to UE2"
-$btnApplyUe2.Location = New-Object System.Drawing.Point(($labelX + 240), ($ndisTopY + $height + 110))
-$btnApplyUe2.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnApplyUe2
-$form.Controls.Add($btnApplyUe2)
-
-$y = $ndisTopY + $height + 110 + 40 + (2 * $gap)
-
 # ----- Duration -----
 $labelTime = New-Object System.Windows.Forms.Label
 $labelTime.Text = "Duration (sec)"
@@ -307,16 +317,6 @@ Set-DarkComboBoxStyle $comboProto
 $form.Controls.Add($comboProto)
 
 $y += $height + (2 * $gap)
-
-# ----- Route Button (Admin CMD) -----
-$buttonRouteAdmin = New-Object System.Windows.Forms.Button
-$buttonRouteAdmin.Text = "Add Route in Admin CMD (use Gateway of Bind IP)"
-$buttonRouteAdmin.Location = New-Object System.Drawing.Point(40, $y)
-$buttonRouteAdmin.Size = New-Object System.Drawing.Size(370, 30)
-Set-DarkButtonStyle $buttonRouteAdmin
-$form.Controls.Add($buttonRouteAdmin)
-
-$y += 30 + $gap
 
 # ----- iperf Buttons -----
 $buttonStart = New-Object System.Windows.Forms.Button
@@ -576,7 +576,7 @@ $buttonRouteAdmin.Add_Click({
 [int]$y2 = 20
 
 $labelList = New-Object System.Windows.Forms.Label
-$labelList.Text = "Detected Modem Ports (Win32_POTSModem):"
+$labelList.Text = "AT Modem Port List"
 $labelList.AutoSize = $true
 $labelList.Location = New-Object System.Drawing.Point($baseX, $y2)
 Set-DarkLabelStyle $labelList
@@ -610,15 +610,8 @@ $btnSelectAll.Size = New-Object System.Drawing.Size(100, 30)
 Set-DarkButtonStyle $btnSelectAll
 $form.Controls.Add($btnSelectAll)
 
-$btnCloseModem = New-Object System.Windows.Forms.Button
-$btnCloseModem.Text = "Exit"
-$btnCloseModem.Location = New-Object System.Drawing.Point(($baseX + 240), ($y2 + 215))
-$btnCloseModem.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnCloseModem
-$form.Controls.Add($btnCloseModem)
-
 $grpAt = New-Object System.Windows.Forms.GroupBox
-$grpAt.Text = "AT Command (broadcast to all selected modems)"
+$grpAt.Text = "AT Command"
 $grpAt.Location = New-Object System.Drawing.Point($baseX, ($y2 + 260))
 $grpAt.Size = New-Object System.Drawing.Size(380, 300)
 $grpAt.ForeColor = $labelColor
@@ -631,7 +624,7 @@ $lblSelected.Location = New-Object System.Drawing.Point(15, 25)
 $grpAt.Controls.Add($lblSelected)
 
 $lblCmd = New-Object System.Windows.Forms.Label
-$lblCmd.Text = "AT command:"
+$lblCmd.Text = "Command"
 $lblCmd.AutoSize = $true
 $lblCmd.Location = New-Object System.Drawing.Point(15, 55)
 $grpAt.Controls.Add($lblCmd)
@@ -671,7 +664,7 @@ $lblLog.Location = New-Object System.Drawing.Point(15, 110)
 $grpAt.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(15, 130)
+$txtLog.Location = New-Object System.Drawing.Point(15, 140)
 $txtLog.Size = New-Object System.Drawing.Size(350, 150)
 $txtLog.Multiline = $true
 $txtLog.ReadOnly = $true
@@ -808,7 +801,6 @@ function Send-ATCommand {
 }
 
 $btnRefresh.Add_Click({ Detect-ModemPorts })
-$btnCloseModem.Add_Click({ $form.Close() })
 
 $btnSelectAll.Add_Click({
     for ($i = 0; $i -lt $listPorts.Items.Count; $i++) {
