@@ -403,14 +403,21 @@ function Refresh-NdisList {
 }
 
 # =========================================================
-#   특정 IP가 붙어있는 NIC의 Gateway 찾기 함수
+#   특정 IP가 붙어있는 NIC의 Gateway + IF Index 찾기 함수
 # =========================================================
-function Get-GatewayForIp {
+function Get-RouteInfoForIp {
     param(
         [string]$IpAddress
     )
 
-    if (-not $IpAddress) { return $null }
+    $result = [PSCustomObject]@{
+        Gateway = $null
+        IfIndex = $null
+    }
+
+    if (-not $IpAddress) {
+        return $result
+    }
 
     try {
         $cfgs = Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue |
@@ -419,15 +426,19 @@ function Get-GatewayForIp {
         foreach ($cfg in $cfgs) {
             if ($cfg.IPAddress -and ($cfg.IPAddress -contains $IpAddress)) {
                 if ($cfg.DefaultIPGateway -and $cfg.DefaultIPGateway.Length -gt 0) {
-                    return $cfg.DefaultIPGateway[0]
+                    $result.Gateway = $cfg.DefaultIPGateway[0]
                 }
+                if ($cfg.InterfaceIndex) {
+                    $result.IfIndex = $cfg.InterfaceIndex
+                }
+                return $result
             }
         }
     }
     catch {
     }
 
-    return $null
+    return $result
 }
 
 # ----- iperf Events -----
@@ -519,7 +530,7 @@ $buttonStop.Add_Click({
     }
 })
 
-# ----- Route (Gateway 자동 적용, 관리자 CMD) -----
+# ----- Route (Gateway + IF 자동 적용, 관리자 CMD) -----
 $buttonRouteAdmin.Add_Click({
     $server = $textServerIp.Text.Trim()
     $bind1  = $textBindIp1.Text.Trim()
@@ -534,23 +545,23 @@ $buttonRouteAdmin.Add_Click({
 
     # UE1용
     if ($checkUE1.Checked -and $bind1) {
-        $gw1 = Get-GatewayForIp -IpAddress $bind1
-        if ($gw1) {
-            $cmdParts += "route ADD $server MASK 255.255.255.0 $gw1"
+        $info1 = Get-RouteInfoForIp -IpAddress $bind1
+        if ($info1.Gateway -and $info1.IfIndex) {
+            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info1.Gateway) METRIC 1 IF $($info1.IfIndex)"
         }
         else {
-            [System.Windows.Forms.MessageBox]::Show("Could not find gateway for UE1 Bind IP ($bind1).", "Route Warning (UE1)") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE1 Bind IP ($bind1).", "Route Warning (UE1)") | Out-Null
         }
     }
 
     # UE2용
     if ($checkUE2.Checked -and $bind2) {
-        $gw2 = Get-GatewayForIp -IpAddress $bind2
-        if ($gw2) {
-            $cmdParts += "route ADD $server MASK 255.255.255.0 $gw2"
+        $info2 = Get-RouteInfoForIp -IpAddress $bind2
+        if ($info2.Gateway -and $info2.IfIndex) {
+            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info2.Gateway) METRIC 1 IF $($info2.IfIndex)"
         }
         else {
-            [System.Windows.Forms.MessageBox]::Show("Could not find gateway for UE2 Bind IP ($bind2).", "Route Warning (UE2)") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE2 Bind IP ($bind2).", "Route Warning (UE2)") | Out-Null
         }
     }
 
