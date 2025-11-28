@@ -536,7 +536,7 @@ $buttonRouteAdmin.Add_Click({
     if ($checkUE1.Checked -and $bind1) {
         $gw1 = Get-GatewayForIp -IpAddress $bind1
         if ($gw1) {
-            $cmdParts += "route ADD $server MASK 255.255.255.255 $gw1"
+            $cmdParts += "route ADD $server MASK 255.255.255.0 $gw1"
         }
         else {
             [System.Windows.Forms.MessageBox]::Show("Could not find gateway for UE1 Bind IP ($bind1).", "Route Warning (UE1)") | Out-Null
@@ -547,7 +547,7 @@ $buttonRouteAdmin.Add_Click({
     if ($checkUE2.Checked -and $bind2) {
         $gw2 = Get-GatewayForIp -IpAddress $bind2
         if ($gw2) {
-            $cmdParts += "route ADD $server MASK 255.255.255.255 $gw2"
+            $cmdParts += "route ADD $server MASK 255.255.255.0 $gw2"
         }
         else {
             [System.Windows.Forms.MessageBox]::Show("Could not find gateway for UE2 Bind IP ($bind2).", "Route Warning (UE2)") | Out-Null
