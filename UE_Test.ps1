@@ -9,7 +9,12 @@ $global:ModemList = @()    # 모뎀 리스트
 $global:PingJobUE1 = $null
 $global:PingJobUE2 = $null
 
-# ----- Main Form -----
+# ===== 색상 정의 =====
+$colorDefaultLog = [System.Drawing.Color]::White
+$colorUE1        = [System.Drawing.Color]::LightGreen
+$colorUE2        = [System.Drawing.Color]::LightSkyBlue
+
+# ===== Main Form =====
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
 $form.ClientSize = New-Object System.Drawing.Size(950, 820)   # 넉넉하게
@@ -445,7 +450,7 @@ function Get-RouteInfoForIp {
     return $result
 }
 
-# ----- iperf / Route Events -----
+# ===== iperf / Route Events =====
 $buttonClose.Add_Click({
     # 폼 종료 시 ping job 도 같이 정리
     if ($global:PingJobUE1) {
@@ -687,10 +692,10 @@ $lblLog.AutoSize = $true
 $lblLog.Location = New-Object System.Drawing.Point(15, 110)
 $grpAt.Controls.Add($lblLog)
 
-$txtLog = New-Object System.Windows.Forms.TextBox
+# ===== AT Log: RichTextBox 로 변경 =====
+$txtLog = New-Object System.Windows.Forms.RichTextBox
 $txtLog.Location = New-Object System.Drawing.Point(15, 140)
 $txtLog.Size = New-Object System.Drawing.Size(350, 150)
-$txtLog.Multiline = $true
 $txtLog.ReadOnly = $true
 $txtLog.ScrollBars = "Vertical"
 $txtLog.BackColor = $textBgColor
@@ -699,10 +704,24 @@ $grpAt.Controls.Add($txtLog)
 
 $grpAt.Enabled = $false
 
+# ===== 색상 지원 Add-Log 함수 =====
 function Add-Log {
-    param([string]$Message)
+    param(
+        [string]$Message,
+        [System.Drawing.Color]$Color = $colorDefaultLog
+    )
     $time = Get-Date -Format "HH:mm:ss"
-    $txtLog.AppendText("$time  $Message`r`n")
+    $line = "$time  $Message`r`n"
+
+    $txtLog.SelectionStart = $txtLog.TextLength
+    $txtLog.SelectionLength = 0
+    $txtLog.SelectionColor = $Color
+    $txtLog.AppendText($line)
+    $txtLog.SelectionColor = $colorDefaultLog
+
+    # 자동 스크롤
+    $txtLog.SelectionStart = $txtLog.TextLength
+    $txtLog.ScrollToCaret()
 }
 
 function Update-SelectedCount {
@@ -773,6 +792,11 @@ function Send-ATCommand {
         $modem = $global:ModemList[$idx]
         $portName = $modem.AttachedTo
 
+        # 포트별 색상 (0번: UE1, 1번: UE2 가정)
+        $logColor = $colorDefaultLog
+        if ($idx -eq 0) { $logColor = $colorUE1 }
+        elseif ($idx -eq 1) { $logColor = $colorUE2 }
+
         try {
             $sp = New-Object System.IO.Ports.SerialPort $portName, 115200, "None", 8, "One"
             $sp.Handshake = "None"
@@ -784,7 +808,7 @@ function Send-ATCommand {
 
             $sp.Open()
 
-            Add-Log "TX ${portName}: $cmd"
+            Add-Log "TX ${portName}: $cmd" $logColor
 
             $sp.DiscardInBuffer()
             $sp.Write($send)
@@ -808,18 +832,18 @@ function Send-ATCommand {
                 $respLines = $resp -replace "`r`n", "`n" -split "`n"
                 foreach ($line in $respLines) {
                     if ($line.Trim() -ne "") {
-                        Add-Log "RX ${portName}: $line"
+                        Add-Log "RX ${portName}: $line" $logColor
                     }
                 }
             }
             else {
-                Add-Log "RX ${portName}: (no data)"
+                Add-Log "RX ${portName}: (no data)" $logColor
             }
 
             $sp.Close()
         }
         catch {
-            Add-Log "Error on ${portName}: $($_.Exception.Message)"
+            Add-Log "Error on ${portName}: $($_.Exception.Message)" $logColor
         }
     }
 }
@@ -895,10 +919,10 @@ $lblPingLog.AutoSize = $true
 $lblPingLog.Location = New-Object System.Drawing.Point(15, 50)
 $grpPing.Controls.Add($lblPingLog)
 
-$txtPingLog = New-Object System.Windows.Forms.TextBox
+# ===== Ping Log: RichTextBox 로 변경 =====
+$txtPingLog = New-Object System.Windows.Forms.RichTextBox
 $txtPingLog.Location = New-Object System.Drawing.Point(15, 70)
 $txtPingLog.Size = New-Object System.Drawing.Size(350, 110)
-$txtPingLog.Multiline = $true
 $txtPingLog.ReadOnly = $true
 $txtPingLog.ScrollBars = "Vertical"
 $txtPingLog.BackColor = $textBgColor
@@ -906,9 +930,22 @@ $txtPingLog.ForeColor = $textFgColor
 $grpPing.Controls.Add($txtPingLog)
 
 function Add-PingLog {
-    param([string]$Message)
+    param(
+        [string]$Message,
+        [System.Drawing.Color]$Color = $colorDefaultLog
+    )
     $time = Get-Date -Format "HH:mm:ss"
-    $txtPingLog.AppendText("$time  $Message`r`n")
+    $line = "$time  $Message`r`n"
+
+    $txtPingLog.SelectionStart = $txtPingLog.TextLength
+    $txtPingLog.SelectionLength = 0
+    $txtPingLog.SelectionColor = $Color
+    $txtPingLog.AppendText($line)
+    $txtPingLog.SelectionColor = $colorDefaultLog
+
+    # 자동 스크롤
+    $txtPingLog.SelectionStart = $txtPingLog.TextLength
+    $txtPingLog.ScrollToCaret()
 }
 
 # ----- Ping 체크박스 이벤트 -----
@@ -934,7 +971,7 @@ $checkPingUE1.Add_CheckedChanged({
                 param($Server, $Bind)
                 ping.exe -t -S $Bind $Server
             } -ArgumentList $server, $bind1
-            Add-PingLog "[UE1] ping started (Bind=$bind1, Server=$server)"
+            Add-PingLog "[UE1] ping started (Bind=$bind1, Server=$server)" $colorUE1
         }
         catch {
             [System.Windows.Forms.MessageBox]::Show("Failed to start ping UE1: $($_.Exception.Message)", "Ping UE1 Error") | Out-Null
@@ -945,7 +982,7 @@ $checkPingUE1.Add_CheckedChanged({
         if ($global:PingJobUE1) {
             try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
             try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
-            Add-PingLog "[UE1] ping stopped."
+            Add-PingLog "[UE1] ping stopped." $colorUE1
             $global:PingJobUE1 = $null
         }
     }
@@ -973,7 +1010,7 @@ $checkPingUE2.Add_CheckedChanged({
                 param($Server, $Bind)
                 ping.exe -t -S $Bind $Server
             } -ArgumentList $server, $bind2
-            Add-PingLog "[UE2] ping started (Bind=$bind2, Server=$server)"
+            Add-PingLog "[UE2] ping started (Bind=$bind2, Server=$server)" $colorUE2
         }
         catch {
             [System.Windows.Forms.MessageBox]::Show("Failed to start ping UE2: $($_.Exception.Message)", "Ping UE2 Error") | Out-Null
@@ -984,7 +1021,7 @@ $checkPingUE2.Add_CheckedChanged({
         if ($global:PingJobUE2) {
             try { Stop-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
             try { Remove-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
-            Add-PingLog "[UE2] ping stopped."
+            Add-PingLog "[UE2] ping stopped." $colorUE2
             $global:PingJobUE2 = $null
         }
     }
@@ -1000,7 +1037,7 @@ $pingTimer.Add_Tick({
             if ($out1) {
                 foreach ($line in $out1) {
                     if ($line -and $line.Trim() -ne "") {
-                        Add-PingLog "[UE1] $line"
+                        Add-PingLog "[UE1] $line" $colorUE1
                     }
                 }
             }
@@ -1013,7 +1050,7 @@ $pingTimer.Add_Tick({
             if ($out2) {
                 foreach ($line in $out2) {
                     if ($line -and $line.Trim() -ne "") {
-                        Add-PingLog "[UE2] $line"
+                        Add-PingLog "[UE2] $line" $colorUE2
                     }
                 }
             }
