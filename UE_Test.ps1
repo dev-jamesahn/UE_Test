@@ -5,6 +5,10 @@ Add-Type -AssemblyName System.Drawing
 $global:psList = @()       # iperf3 PowerShell 윈도우 PID 리스트
 $global:ModemList = @()    # 모뎀 리스트
 
+# 추가: Ping Job 핸들
+$global:PingJobUE1 = $null
+$global:PingJobUE2 = $null
+
 # ----- Main Form -----
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
@@ -441,8 +445,19 @@ function Get-RouteInfoForIp {
     return $result
 }
 
-# ----- iperf Events -----
+# ----- iperf / Route Events -----
 $buttonClose.Add_Click({
+    # 폼 종료 시 ping job 도 같이 정리
+    if ($global:PingJobUE1) {
+        try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+        try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+        $global:PingJobUE1 = $null
+    }
+    if ($global:PingJobUE2) {
+        try { Stop-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+        try { Remove-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+        $global:PingJobUE2 = $null
+    }
     $form.Close()
 })
 
@@ -530,7 +545,7 @@ $buttonStop.Add_Click({
     }
 })
 
-# ----- Route (Gateway + IF 자동 적용, 관리자 CMD) -----
+# Route 버튼: Gateway + IF 자동 적용, 관리자 CMD
 $buttonRouteAdmin.Add_Click({
     $server = $textServerIp.Text.Trim()
     $bind1  = $textBindIp1.Text.Trim()
@@ -543,7 +558,6 @@ $buttonRouteAdmin.Add_Click({
 
     $cmdParts = @()
 
-    # UE1용
     if ($checkUE1.Checked -and $bind1) {
         $info1 = Get-RouteInfoForIp -IpAddress $bind1
         if ($info1.Gateway -and $info1.IfIndex) {
@@ -554,7 +568,6 @@ $buttonRouteAdmin.Add_Click({
         }
     }
 
-    # UE2용
     if ($checkUE2.Checked -and $bind2) {
         $info2 = Get-RouteInfoForIp -IpAddress $bind2
         if ($info2.Gateway -and $info2.IfIndex) {
@@ -850,6 +863,166 @@ $btnApplyUe2.Add_Click({
     }
 })
 
+# =========================================================
+# 3) 오른쪽 아래: UE -> Server Ping + Log
+# =========================================================
+[int]$pingTopY = $y2 + 260 + 320   # AT 그룹박스 아래쪽에 위치
+
+$grpPing = New-Object System.Windows.Forms.GroupBox
+$grpPing.Text = "UE -> Server Ping"
+$grpPing.Location = New-Object System.Drawing.Point($baseX, $pingTopY)
+$grpPing.Size = New-Object System.Drawing.Size(380, 200)
+$grpPing.ForeColor = $labelColor
+$form.Controls.Add($grpPing)
+
+$checkPingUE1 = New-Object System.Windows.Forms.CheckBox
+$checkPingUE1.Text = "Ping UE1 -> Server"
+$checkPingUE1.Location = New-Object System.Drawing.Point(15, 25)
+$checkPingUE1.Size = New-Object System.Drawing.Size(160, 20)
+Set-DarkCheckBoxStyle $checkPingUE1
+$grpPing.Controls.Add($checkPingUE1)
+
+$checkPingUE2 = New-Object System.Windows.Forms.CheckBox
+$checkPingUE2.Text = "Ping UE2 -> Server"
+$checkPingUE2.Location = New-Object System.Drawing.Point(200, 25)
+$checkPingUE2.Size = New-Object System.Drawing.Size(160, 20)
+Set-DarkCheckBoxStyle $checkPingUE2
+$grpPing.Controls.Add($checkPingUE2)
+
+$lblPingLog = New-Object System.Windows.Forms.Label
+$lblPingLog.Text = "Ping Log:"
+$lblPingLog.AutoSize = $true
+$lblPingLog.Location = New-Object System.Drawing.Point(15, 50)
+$grpPing.Controls.Add($lblPingLog)
+
+$txtPingLog = New-Object System.Windows.Forms.TextBox
+$txtPingLog.Location = New-Object System.Drawing.Point(15, 70)
+$txtPingLog.Size = New-Object System.Drawing.Size(350, 110)
+$txtPingLog.Multiline = $true
+$txtPingLog.ReadOnly = $true
+$txtPingLog.ScrollBars = "Vertical"
+$txtPingLog.BackColor = $textBgColor
+$txtPingLog.ForeColor = $textFgColor
+$grpPing.Controls.Add($txtPingLog)
+
+function Add-PingLog {
+    param([string]$Message)
+    $time = Get-Date -Format "HH:mm:ss"
+    $txtPingLog.AppendText("$time  $Message`r`n")
+}
+
+# ----- Ping 체크박스 이벤트 -----
+$checkPingUE1.Add_CheckedChanged({
+    if ($checkPingUE1.Checked) {
+        $server = $textServerIp.Text.Trim()
+        $bind1  = $textBindIp1.Text.Trim()
+
+        if (-not $server -or -not $bind1) {
+            [System.Windows.Forms.MessageBox]::Show("Server IP or UE1 Bind IP is empty.", "Ping UE1 Error") | Out-Null
+            $checkPingUE1.Checked = $false
+            return
+        }
+
+        if ($global:PingJobUE1) {
+            try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+            $global:PingJobUE1 = $null
+        }
+
+        try {
+            $global:PingJobUE1 = Start-Job -ScriptBlock {
+                param($Server, $Bind)
+                ping.exe -t -S $Bind $Server
+            } -ArgumentList $server, $bind1
+            Add-PingLog "[UE1] ping started (Bind=$bind1, Server=$server)"
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to start ping UE1: $($_.Exception.Message)", "Ping UE1 Error") | Out-Null
+            $checkPingUE1.Checked = $false
+        }
+    }
+    else {
+        if ($global:PingJobUE1) {
+            try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
+            Add-PingLog "[UE1] ping stopped."
+            $global:PingJobUE1 = $null
+        }
+    }
+})
+
+$checkPingUE2.Add_CheckedChanged({
+    if ($checkPingUE2.Checked) {
+        $server = $textServerIp.Text.Trim()
+        $bind2  = $textBindIp2.Text.Trim()
+
+        if (-not $server -or -not $bind2) {
+            [System.Windows.Forms.MessageBox]::Show("Server IP or UE2 Bind IP is empty.", "Ping UE2 Error") | Out-Null
+            $checkPingUE2.Checked = $false
+            return
+        }
+
+        if ($global:PingJobUE2) {
+            try { Stop-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+            $global:PingJobUE2 = $null
+        }
+
+        try {
+            $global:PingJobUE2 = Start-Job -ScriptBlock {
+                param($Server, $Bind)
+                ping.exe -t -S $Bind $Server
+            } -ArgumentList $server, $bind2
+            Add-PingLog "[UE2] ping started (Bind=$bind2, Server=$server)"
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Failed to start ping UE2: $($_.Exception.Message)", "Ping UE2 Error") | Out-Null
+            $checkPingUE2.Checked = $false
+        }
+    }
+    else {
+        if ($global:PingJobUE2) {
+            try { Stop-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+            try { Remove-Job -Job $global:PingJobUE2 -Force -ErrorAction SilentlyContinue } catch {}
+            Add-PingLog "[UE2] ping stopped."
+            $global:PingJobUE2 = $null
+        }
+    }
+})
+
+# ----- Ping Job 출력 수집용 Timer -----
+$pingTimer = New-Object System.Windows.Forms.Timer
+$pingTimer.Interval = 1000   # 1초마다
+$pingTimer.Add_Tick({
+    if ($global:PingJobUE1) {
+        try {
+            $out1 = Receive-Job -Job $global:PingJobUE1 -ErrorAction SilentlyContinue
+            if ($out1) {
+                foreach ($line in $out1) {
+                    if ($line -and $line.Trim() -ne "") {
+                        Add-PingLog "[UE1] $line"
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    if ($global:PingJobUE2) {
+        try {
+            $out2 = Receive-Job -Job $global:PingJobUE2 -ErrorAction SilentlyContinue
+            if ($out2) {
+                foreach ($line in $out2) {
+                    if ($line -and $line.Trim() -ne "") {
+                        Add-PingLog "[UE2] $line"
+                    }
+                }
+            }
+        } catch {}
+    }
+})
+$pingTimer.Start()
+
+# ----- 폼 Shown 이벤트 -----
 $form.Add_Shown({
     Detect-ModemPorts
     Refresh-NdisList
