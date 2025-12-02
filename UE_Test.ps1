@@ -605,54 +605,6 @@ $buttonRouteAdmin.Add_Click({
     }
 })
 
-# Route 버튼: Gateway + IF 자동 적용, 관리자 CMD
-$buttonRouteAdmin.Add_Click({
-    $server = $textServerIp.Text.Trim()
-    $bind1  = $textBindIp1.Text.Trim()
-    $bind2  = $textBindIp2.Text.Trim()
-
-    if (-not $server) {
-        [System.Windows.Forms.MessageBox]::Show("Server IP is empty.", "Route Error") | Out-Null
-        return
-    }
-
-    $cmdParts = @()
-
-    if ($checkUE1.Checked -and $bind1) {
-        $info1 = Get-RouteInfoForIp -IpAddress $bind1
-        if ($info1.Gateway -and $info1.IfIndex) {
-            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info1.Gateway) METRIC 1 IF $($info1.IfIndex)"
-        }
-        else {
-            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE1 Bind IP ($bind1).", "Route Warning (UE1)") | Out-Null
-        }
-    }
-
-    if ($checkUE2.Checked -and $bind2) {
-        $info2 = Get-RouteInfoForIp -IpAddress $bind2
-        if ($info2.Gateway -and $info2.IfIndex) {
-            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info2.Gateway) METRIC 1 IF $($info2.IfIndex)"
-        }
-        else {
-            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE2 Bind IP ($bind2).", "Route Warning (UE2)") | Out-Null
-        }
-    }
-
-    if ($cmdParts.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No route to add. Check UE checkbox, Bind IP and gateway.", "Route Error") | Out-Null
-        return
-    }
-
-    $cmdLine = $cmdParts -join " & "
-
-    try {
-        Start-Process "cmd.exe" -Verb RunAs -ArgumentList "/k $cmdLine" | Out-Null
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show("Failed to start admin CMD: $($_.Exception.Message)", "Route Error") | Out-Null
-    }
-})
-
 # ===== 여기 아래에 Route Delete 추가 =====
 $buttonRouteDelete.Add_Click({
     $server = $textServerIp.Text.Trim()
