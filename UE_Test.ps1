@@ -17,7 +17,7 @@ $colorUE2        = [System.Drawing.Color]::LightSkyBlue
 # ===== Main Form =====
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
-$form.ClientSize = New-Object System.Drawing.Size(950, 820)   # 넉넉하게
+$form.ClientSize = New-Object System.Drawing.Size(950, 850)   # 넉넉하게
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
@@ -64,16 +64,6 @@ function Set-DarkCheckBoxStyle($cb) {
 [int]$height = 23
 [int]$gap = 8
 [int]$y = 20
-
-# ----- Route Button (Admin CMD) -----
-$buttonRouteAdmin = New-Object System.Windows.Forms.Button
-$buttonRouteAdmin.Text = "Add Route (UE - iPerf Server)"
-$buttonRouteAdmin.Location = New-Object System.Drawing.Point($labelX, $y)
-$buttonRouteAdmin.Size = New-Object System.Drawing.Size(370, 30)
-Set-DarkButtonStyle $buttonRouteAdmin
-$form.Controls.Add($buttonRouteAdmin)
-
-$y += $height + (4 * $gap)
 
 # =========================================================
 #   Remote NDIS IP List (자동 검색 + 선택 적용)
@@ -132,7 +122,24 @@ $textServerIp.Text = "10.36.10.250"
 Set-DarkTextBoxStyle $textServerIp
 $form.Controls.Add($textServerIp)
 
-$y += $height + $gap
+$y += $height + (4 * $gap)
+
+# ----- Route Buttons (Admin CMD) -----
+$buttonRouteAdmin = New-Object System.Windows.Forms.Button
+$buttonRouteAdmin.Text = "Add Routing"
+$buttonRouteAdmin.Location = New-Object System.Drawing.Point($labelX, $y)
+$buttonRouteAdmin.Size = New-Object System.Drawing.Size(200, 30)
+Set-DarkButtonStyle $buttonRouteAdmin
+$form.Controls.Add($buttonRouteAdmin)
+
+$buttonRouteDelete = New-Object System.Windows.Forms.Button
+$buttonRouteDelete.Text = "Del Routing"
+$buttonRouteDelete.Location = New-Object System.Drawing.Point(($labelX + 220), $y)
+$buttonRouteDelete.Size = New-Object System.Drawing.Size(200, 30)
+Set-DarkButtonStyle $buttonRouteDelete
+$form.Controls.Add($buttonRouteDelete)
+
+$y += $height + (4 * $gap)
 
 # ----- UE1 / UE2 Enable Checkboxes -----
 $checkUE1 = New-Object System.Windows.Forms.CheckBox
@@ -597,6 +604,75 @@ $buttonRouteAdmin.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("Failed to start admin CMD: $($_.Exception.Message)", "Route Error") | Out-Null
     }
 })
+
+# Route 버튼: Gateway + IF 자동 적용, 관리자 CMD
+$buttonRouteAdmin.Add_Click({
+    $server = $textServerIp.Text.Trim()
+    $bind1  = $textBindIp1.Text.Trim()
+    $bind2  = $textBindIp2.Text.Trim()
+
+    if (-not $server) {
+        [System.Windows.Forms.MessageBox]::Show("Server IP is empty.", "Route Error") | Out-Null
+        return
+    }
+
+    $cmdParts = @()
+
+    if ($checkUE1.Checked -and $bind1) {
+        $info1 = Get-RouteInfoForIp -IpAddress $bind1
+        if ($info1.Gateway -and $info1.IfIndex) {
+            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info1.Gateway) METRIC 1 IF $($info1.IfIndex)"
+        }
+        else {
+            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE1 Bind IP ($bind1).", "Route Warning (UE1)") | Out-Null
+        }
+    }
+
+    if ($checkUE2.Checked -and $bind2) {
+        $info2 = Get-RouteInfoForIp -IpAddress $bind2
+        if ($info2.Gateway -and $info2.IfIndex) {
+            $cmdParts += "route ADD $server MASK 255.255.255.255 $($info2.Gateway) METRIC 1 IF $($info2.IfIndex)"
+        }
+        else {
+            [System.Windows.Forms.MessageBox]::Show("Could not find gateway/IF for UE2 Bind IP ($bind2).", "Route Warning (UE2)") | Out-Null
+        }
+    }
+
+    if ($cmdParts.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("No route to add. Check UE checkbox, Bind IP and gateway.", "Route Error") | Out-Null
+        return
+    }
+
+    $cmdLine = $cmdParts -join " & "
+
+    try {
+        Start-Process "cmd.exe" -Verb RunAs -ArgumentList "/k $cmdLine" | Out-Null
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to start admin CMD: $($_.Exception.Message)", "Route Error") | Out-Null
+    }
+})
+
+# ===== 여기 아래에 Route Delete 추가 =====
+$buttonRouteDelete.Add_Click({
+    $server = $textServerIp.Text.Trim()
+
+    if (-not $server) {
+        [System.Windows.Forms.MessageBox]::Show("Server IP is empty.", "Route Delete Error") | Out-Null
+        return
+    }
+
+    # 해당 서버 IP 에 대한 라우트 전체 삭제
+    $cmdLine = "route DELETE $server"
+
+    try {
+        Start-Process "cmd.exe" -Verb RunAs -ArgumentList "/k $cmdLine" | Out-Null
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to delete route: $($_.Exception.Message)", "Route Delete Error") | Out-Null
+    }
+})
+
 
 # =========================================================
 # 2) 오른쪽 영역: Modem AT Command Tool (Multi-port)
