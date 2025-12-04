@@ -75,7 +75,7 @@ function Set-DarkCheckBoxStyle($cb) {
 [int]$labelX = 20
 [int]$inputX = 190
 [int]$widthLabel = 160
-[int]$widthInput = 240
+[int]$widthInput = 110
 [int]$height = 23
 [int]$gap = 8
 
@@ -176,71 +176,77 @@ $form.Controls.Add($checkUE2)
 
 $y += $height + (2 * $gap)
 
-# DL/UL Ports & BW
-$labelDl1Port = New-Object System.Windows.Forms.Label
-$labelDl1Port.Text = "DL1 Port (UE1 / Bind #1)"
-$labelDl1Port.Location = New-Object System.Drawing.Point($labelX, $y)
-$labelDl1Port.Size = New-Object System.Drawing.Size($widthLabel, $height)
-Set-DarkLabelStyle $labelDl1Port
-$form.Controls.Add($labelDl1Port)
+# ============================
+# DL / UL Ports (2열: UE1 / UE2)
+# ============================
 
-$textDl1Port = New-Object System.Windows.Forms.TextBox
-$textDl1Port.Location = New-Object System.Drawing.Point($inputX, $y)
-$textDl1Port.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textDl1Port.Text = "5501"
-Set-DarkTextBoxStyle $textDl1Port
-$form.Controls.Add($textDl1Port)
+# UE 컬럼 타이틀
+$labelColUe1 = New-Object System.Windows.Forms.Label
+$labelColUe1.Text = "UE1"
+$labelColUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$labelColUe1.Size = New-Object System.Drawing.Size($widthInput, $height)   # ← 여기
+Set-DarkLabelStyle $labelColUe1
+$form.Controls.Add($labelColUe1)
 
-$y += $height + $gap
-
-$labelUl1Port = New-Object System.Windows.Forms.Label
-$labelUl1Port.Text = "UL1 Port (UE1 / Bind #1)"
-$labelUl1Port.Location = New-Object System.Drawing.Point($labelX, $y)
-$labelUl1Port.Size = New-Object System.Drawing.Size($widthLabel, $height)
-Set-DarkLabelStyle $labelUl1Port
-$form.Controls.Add($labelUl1Port)
-
-$textUl1Port = New-Object System.Windows.Forms.TextBox
-$textUl1Port.Location = New-Object System.Drawing.Point($inputX, $y)
-$textUl1Port.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textUl1Port.Text = "5502"
-Set-DarkTextBoxStyle $textUl1Port
-$form.Controls.Add($textUl1Port)
+$colUe2X = $inputX + $widthInput + 10
+$labelColUe2 = New-Object System.Windows.Forms.Label
+$labelColUe2.Text = "UE2"
+$labelColUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$labelColUe2.Size = New-Object System.Drawing.Size($widthInput, $height)   # ← 그리고 여기
+Set-DarkLabelStyle $labelColUe2
+$form.Controls.Add($labelColUe2)
 
 $y += $height + $gap
 
-$labelDl2Port = New-Object System.Windows.Forms.Label
-$labelDl2Port.Text = "DL2 Port (UE2 / Bind #2)"
-$labelDl2Port.Location = New-Object System.Drawing.Point($labelX, $y)
-$labelDl2Port.Size = New-Object System.Drawing.Size($widthLabel, $height)
-Set-DarkLabelStyle $labelDl2Port
-$form.Controls.Add($labelDl2Port)
+# ---- DL Port row ----
+$labelDlPort = New-Object System.Windows.Forms.Label
+$labelDlPort.Text = "DL Port"
+$labelDlPort.Location = New-Object System.Drawing.Point($labelX, $y)
+$labelDlPort.Size = New-Object System.Drawing.Size($widthLabel, $height)
+Set-DarkLabelStyle $labelDlPort
+$form.Controls.Add($labelDlPort)
 
-$textDl2Port = New-Object System.Windows.Forms.TextBox
-$textDl2Port.Location = New-Object System.Drawing.Point($inputX, $y)
-$textDl2Port.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textDl2Port.Text = "5601"
-Set-DarkTextBoxStyle $textDl2Port
-$form.Controls.Add($textDl2Port)
+$textDlPortUe1 = New-Object System.Windows.Forms.TextBox
+$textDlPortUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$textDlPortUe1.Size = New-Object System.Drawing.Size($widthInput, $height)   # ←  widthInput 사용
+$textDlPortUe1.Text = "5501"
+Set-DarkTextBoxStyle $textDlPortUe1
+$form.Controls.Add($textDlPortUe1)
+
+$textDlPortUe2 = New-Object System.Windows.Forms.TextBox
+$textDlPortUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)      # ← 오른쪽 열로 이동
+$textDlPortUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textDlPortUe2.Text = "5601"
+Set-DarkTextBoxStyle $textDlPortUe2
+$form.Controls.Add($textDlPortUe2)
 
 $y += $height + $gap
 
-$labelUl2Port = New-Object System.Windows.Forms.Label
-$labelUl2Port.Text = "UL2 Port (UE2 / Bind #2)"
-$labelUl2Port.Location = New-Object System.Drawing.Point($labelX, $y)
-$labelUl2Port.Size = New-Object System.Drawing.Size($widthLabel, $height)
-Set-DarkLabelStyle $labelUl2Port
-$form.Controls.Add($labelUl2Port)
+# ---- UL Port row ----
+$labelUlPort = New-Object System.Windows.Forms.Label
+$labelUlPort.Text = "UL Port"
+$labelUlPort.Location = New-Object System.Drawing.Point($labelX, $y)
+$labelUlPort.Size = New-Object System.Drawing.Size($widthLabel, $height)
+Set-DarkLabelStyle $labelUlPort
+$form.Controls.Add($labelUlPort)
 
-$textUl2Port = New-Object System.Windows.Forms.TextBox
-$textUl2Port.Location = New-Object System.Drawing.Point($inputX, $y)
-$textUl2Port.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textUl2Port.Text = "5602"
-Set-DarkTextBoxStyle $textUl2Port
-$form.Controls.Add($textUl2Port)
+$textUlPortUe1 = New-Object System.Windows.Forms.TextBox
+$textUlPortUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$textUlPortUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textUlPortUe1.Text = "5502"
+Set-DarkTextBoxStyle $textUlPortUe1
+$form.Controls.Add($textUlPortUe1)
+
+$textUlPortUe2 = New-Object System.Windows.Forms.TextBox
+$textUlPortUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$textUlPortUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textUlPortUe2.Text = "5602"
+Set-DarkTextBoxStyle $textUlPortUe2
+$form.Controls.Add($textUlPortUe2)
 
 $y += $height + (2 * $gap)
 
+# Download BW
 $labelDlBw = New-Object System.Windows.Forms.Label
 $labelDlBw.Text = "Download BW"
 $labelDlBw.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -248,15 +254,23 @@ $labelDlBw.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelDlBw
 $form.Controls.Add($labelDlBw)
 
-$textDlBw = New-Object System.Windows.Forms.TextBox
-$textDlBw.Location = New-Object System.Drawing.Point($inputX, $y)
-$textDlBw.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textDlBw.Text = "1000M"
-Set-DarkTextBoxStyle $textDlBw
-$form.Controls.Add($textDlBw)
+$textDlBwUe1 = New-Object System.Windows.Forms.TextBox
+$textDlBwUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$textDlBwUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textDlBwUe1.Text = "1000M"
+Set-DarkTextBoxStyle $textDlBwUe1
+$form.Controls.Add($textDlBwUe1)
+
+$textDlBwUe2 = New-Object System.Windows.Forms.TextBox
+$textDlBwUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$textDlBwUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textDlBwUe2.Text = "1000M"
+Set-DarkTextBoxStyle $textDlBwUe2
+$form.Controls.Add($textDlBwUe2)
 
 $y += $height + $gap
 
+# Upload BW
 $labelUlBw = New-Object System.Windows.Forms.Label
 $labelUlBw.Text = "Upload BW"
 $labelUlBw.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -264,16 +278,21 @@ $labelUlBw.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelUlBw
 $form.Controls.Add($labelUlBw)
 
-$textUlBw = New-Object System.Windows.Forms.TextBox
-$textUlBw.Location = New-Object System.Drawing.Point($inputX, $y)
-$textUlBw.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textUlBw.Text = "500M"
-Set-DarkTextBoxStyle $textUlBw
-$form.Controls.Add($textUlBw)
+$textUlBwUe1 = New-Object System.Windows.Forms.TextBox
+$textUlBwUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$textUlBwUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textUlBwUe1.Text = "500M"
+Set-DarkTextBoxStyle $textUlBwUe1
+$form.Controls.Add($textUlBwUe1)
+
+$textUlBwUe2 = New-Object System.Windows.Forms.TextBox
+$textUlBwUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$textUlBwUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textUlBwUe2.Text = "500M"
+Set-DarkTextBoxStyle $textUlBwUe2
+$form.Controls.Add($textUlBwUe2)
 
 $y += $height + $gap
-
-# Bind IP 텍스트박스는 제거됨!
 
 # Duration
 $labelTime = New-Object System.Windows.Forms.Label
@@ -283,12 +302,19 @@ $labelTime.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelTime
 $form.Controls.Add($labelTime)
 
-$textTime = New-Object System.Windows.Forms.TextBox
-$textTime.Location = New-Object System.Drawing.Point($inputX, $y)
-$textTime.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textTime.Text = "86400"
-Set-DarkTextBoxStyle $textTime
-$form.Controls.Add($textTime)
+$textTimeUe1 = New-Object System.Windows.Forms.TextBox
+$textTimeUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$textTimeUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textTimeUe1.Text = "86400"
+Set-DarkTextBoxStyle $textTimeUe1
+$form.Controls.Add($textTimeUe1)
+
+$textTimeUe2 = New-Object System.Windows.Forms.TextBox
+$textTimeUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$textTimeUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$textTimeUe2.Text = "86400"
+Set-DarkTextBoxStyle $textTimeUe2
+$form.Controls.Add($textTimeUe2)
 
 $y += $height + $gap
 
@@ -300,29 +326,38 @@ $labelProto.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelProto
 $form.Controls.Add($labelProto)
 
-$comboProto = New-Object System.Windows.Forms.ComboBox
-$comboProto.Location = New-Object System.Drawing.Point($inputX, $y)
-$comboProto.Size = New-Object System.Drawing.Size($widthInput, $height)
-[void]$comboProto.Items.Add("UDP")
-[void]$comboProto.Items.Add("TCP")
-$comboProto.SelectedIndex = 0
-Set-DarkComboBoxStyle $comboProto
-$form.Controls.Add($comboProto)
+$comboProtoUe1 = New-Object System.Windows.Forms.ComboBox
+$comboProtoUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$comboProtoUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+[void]$comboProtoUe1.Items.Add("UDP")
+[void]$comboProtoUe1.Items.Add("TCP")
+$comboProtoUe1.SelectedIndex = 0
+Set-DarkComboBoxStyle $comboProtoUe1
+$form.Controls.Add($comboProtoUe1)
+
+$comboProtoUe2 = New-Object System.Windows.Forms.ComboBox
+$comboProtoUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$comboProtoUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+[void]$comboProtoUe2.Items.Add("UDP")
+[void]$comboProtoUe2.Items.Add("TCP")
+$comboProtoUe2.SelectedIndex = 0
+Set-DarkComboBoxStyle $comboProtoUe2
+$form.Controls.Add($comboProtoUe2)
 
 $y += $height + (2 * $gap)
 
-# iperf Buttons
+# iperf Buttons (버튼 생성만)
 $buttonStart = New-Object System.Windows.Forms.Button
 $buttonStart.Text = "Start Selected UEs"
 $buttonStart.Location = New-Object System.Drawing.Point(40, $y)
-$buttonStart.Size = New-Object System.Drawing.Size(160, 40)
+$buttonStart.Size = New-Object System.Drawing.Size(160, $height)
 Set-DarkButtonStyle $buttonStart
 $form.Controls.Add($buttonStart)
 
 $buttonStop = New-Object System.Windows.Forms.Button
 $buttonStop.Text = "Stop All Sessions"
 $buttonStop.Location = New-Object System.Drawing.Point(250, $y)
-$buttonStop.Size = New-Object System.Drawing.Size(160, 40)
+$buttonStop.Size = New-Object System.Drawing.Size(160, $height)
 Set-DarkButtonStyle $buttonStop
 $form.Controls.Add($buttonStop)
 
@@ -331,9 +366,12 @@ $y += $height + 2*$gap + 30
 $buttonClose = New-Object System.Windows.Forms.Button
 $buttonClose.Text = "Exit"
 $buttonClose.Location = New-Object System.Drawing.Point(180, $y)
-$buttonClose.Size = New-Object System.Drawing.Size(120, 40)
+$buttonClose.Size = New-Object System.Drawing.Size(120, $height)
 Set-DarkButtonStyle $buttonClose
 $form.Controls.Add($buttonClose)
+
+
+$y += $height + 2*$gap + 30
 
 # ======================
 # Helper: Remote NDIS IP list
@@ -857,14 +895,25 @@ $buttonClose.Add_Click({
 
 $buttonStart.Add_Click({
     $server = $textServerIp.Text.Trim()
-    $dl1p = $textDl1Port.Text.Trim()
-    $ul1p = $textUl1Port.Text.Trim()
-    $dl2p = $textDl2Port.Text.Trim()
-    $ul2p = $textUl2Port.Text.Trim()
-    $dlBw = $textDlBw.Text.Trim()
-    $ulBw = $textUlBw.Text.Trim()
-    $t    = $textTime.Text.Trim()
-    $proto= $comboProto.SelectedItem
+
+    # Ports
+    $dl1p = $textDlPortUe1.Text.Trim()
+    $ul1p = $textUlPortUe1.Text.Trim()
+    $dl2p = $textDlPortUe2.Text.Trim()
+    $ul2p = $textUlPortUe2.Text.Trim()
+
+    # UE1 설정 값
+    $dlBw1 = $textDlBwUe1.Text.Trim()
+    $ulBw1 = $textUlBwUe1.Text.Trim()
+    $t1    = $textTimeUe1.Text.Trim()
+    $proto1 = $comboProtoUe1.SelectedItem
+
+    # UE2 설정 값
+    $dlBw2 = $textDlBwUe2.Text.Trim()
+    $ulBw2 = $textUlBwUe2.Text.Trim()
+    $t2    = $textTimeUe2.Text.Trim()
+    $proto2 = $comboProtoUe2.SelectedItem
+
     $useUE1 = $checkUE1.Checked
     $useUE2 = $checkUE2.Checked
 
@@ -873,13 +922,10 @@ $buttonStart.Add_Click({
         return
     }
 
-    if (-not $server -or -not $dlBw -or -not $ulBw -or -not $t) {
-        [System.Windows.Forms.MessageBox]::Show("Some required fields are empty.", "Input Error") | Out-Null
+    if (-not $server) {
+        [System.Windows.Forms.MessageBox]::Show("Server IP is empty.", "Input Error") | Out-Null
         return
     }
-
-    $udp = ""
-    if ($proto -eq "UDP") { $udp = "-u" }
 
     $global:psList = @()
 
@@ -888,27 +934,33 @@ $buttonStart.Add_Click({
         $global:psList += $p.Id
     }
 
+    # ---------- UE1 ----------
     if ($useUE1) {
         $bind1 = $global:UE1Info.IP
-        if (-not $dl1p -or -not $ul1p -or -not $bind1) {
-            [System.Windows.Forms.MessageBox]::Show("UE1 fields or IP (Device Info) are incomplete.", "Input Error (UE1)") | Out-Null
-        } else {
-            $DL1 = "iperf3.exe -c $server -p $dl1p $udp -b $dlBw -t $t -R --bind $bind1"
-            $UL1 = "iperf3.exe -c $server -p $ul1p $udp -b $ulBw -t $t --bind $bind1"
+        $udp1  = if ($proto1 -eq "UDP") { "-u" } else { "" }
+
+        if ($bind1 -and $dl1p -and $ul1p -and $dlBw1 -and $ulBw1 -and $t1) {
+            $DL1 = "iperf3.exe -c $server -p $dl1p $udp1 -b $dlBw1 -t $t1 -R --bind $bind1"
+            $UL1 = "iperf3.exe -c $server -p $ul1p $udp1 -b $ulBw1 -t $t1 --bind $bind1"
             Start-TestWindow $DL1
             Start-TestWindow $UL1
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("UE1 fields or IP (Device Info) are incomplete.", "Input Error (UE1)") | Out-Null
         }
     }
 
+    # ---------- UE2 ----------
     if ($useUE2) {
         $bind2 = $global:UE2Info.IP
-        if (-not $dl2p -or -not $ul2p -or -not $bind2) {
-            [System.Windows.Forms.MessageBox]::Show("UE2 fields or IP (Device Info) are incomplete.", "Input Error (UE2)") | Out-Null
-        } else {
-            $DL2 = "iperf3.exe -c $server -p $dl2p $udp -b $dlBw -t $t -R --bind $bind2"
-            $UL2 = "iperf3.exe -c $server -p $ul2p $udp -b $ulBw -t $t --bind $bind2"
+        $udp2  = if ($proto2 -eq "UDP") { "-u" } else { "" }
+
+        if ($bind2 -and $dl2p -and $ul2p -and $dlBw2 -and $ulBw2 -and $t2) {
+            $DL2 = "iperf3.exe -c $server -p $dl2p $udp2 -b $dlBw2 -t $t2 -R --bind $bind2"
+            $UL2 = "iperf3.exe -c $server -p $ul2p $udp2 -b $ulBw2 -t $t2 --bind $bind2"
             Start-TestWindow $DL2
             Start-TestWindow $UL2
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("UE2 fields or IP (Device Info) are incomplete.", "Input Error (UE2)") | Out-Null
         }
     }
 
