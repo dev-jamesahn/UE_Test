@@ -1,29 +1,33 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Global lists
-$global:psList = @()       # iperf3 PowerShell 윈도우 PID 리스트
-$global:ModemList = @()    # 모뎀 리스트
-
-# 추가: Ping Job 핸들
-$global:PingJobUE1 = $null
-$global:PingJobUE2 = $null
+# ==========================
+# Global variables
+# ==========================
+$global:psList        = @()     # iperf3 PowerShell 윈도우 PID 리스트
+$global:ModemList     = @()     # AT 모뎀 리스트
+$global:PingJobUE1    = $null   # Ping Job 핸들
+$global:PingJobUE2    = $null
+$global:Ue1ModemIndex = $null   # 모뎀 인덱스 (COM)
+$global:Ue2ModemIndex = $null
 
 # ===== 색상 정의 =====
 $colorDefaultLog = [System.Drawing.Color]::White
 $colorUE1        = [System.Drawing.Color]::LightGreen
 $colorUE2        = [System.Drawing.Color]::LightSkyBlue
 
-# ===== Main Form =====
+# ==========================
+# Main Form
+# ==========================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
-$form.ClientSize = New-Object System.Drawing.Size(950, 850)   # 넉넉하게
+$form.ClientSize = New-Object System.Drawing.Size(1000, 850)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
-$form.AutoScroll = $true                                       # 스크롤 가능
+$form.AutoScroll = $true
 
-# ----- 공통 스타일 -----
+# ----- 공통 스타일 함수 -----
 $labelColor    = [System.Drawing.Color]::White
 $textBgColor   = [System.Drawing.Color]::FromArgb(45,45,48)
 $textFgColor   = [System.Drawing.Color]::White
@@ -31,8 +35,8 @@ $buttonBgColor = [System.Drawing.Color]::FromArgb(64,64,64)
 $buttonFgColor = [System.Drawing.Color]::White
 
 function Set-DarkTextBoxStyle($tb) {
-    $tb.BackColor = $textBgColor
-    $tb.ForeColor = $textFgColor
+    $tb.BackColor  = $textBgColor
+    $tb.ForeColor  = $textFgColor
     $tb.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 }
 function Set-DarkLabelStyle($lb) {
@@ -54,58 +58,67 @@ function Set-DarkCheckBoxStyle($cb) {
     $cb.BackColor = [System.Drawing.Color]::Transparent
 }
 
-# =========================================================
+# =====================================================================
+# 0) 상단 Device Info 영역 (UE1/UE2 IP + Modem)
+# =====================================================================
+$lblDeviceInfo = New-Object System.Windows.Forms.Label
+$lblDeviceInfo.Text = "Device Info"
+$lblDeviceInfo.Location = New-Object System.Drawing.Point(20, 15)
+$lblDeviceInfo.Size = New-Object System.Drawing.Size(200, 20)
+Set-DarkLabelStyle $lblDeviceInfo
+$form.Controls.Add($lblDeviceInfo)
+
+$lblUE1Modem = New-Object System.Windows.Forms.Label
+$lblUE1Modem.AutoSize = $false
+$lblUE1Modem.Location = New-Object System.Drawing.Point(20, 35)
+$lblUE1Modem.Size = New-Object System.Drawing.Size(900, 20)
+$lblUE1Modem.ForeColor = $colorUE1
+$lblUE1Modem.Text = "UE1: (not set)"
+$form.Controls.Add($lblUE1Modem)
+
+$lblUE2Modem = New-Object System.Windows.Forms.Label
+$lblUE2Modem.AutoSize = $false
+$lblUE2Modem.Location = New-Object System.Drawing.Point(20, 55)
+$lblUE2Modem.Size = New-Object System.Drawing.Size(900, 20)
+$lblUE2Modem.ForeColor = $colorUE2
+$lblUE2Modem.Text = "UE2: (not set)"
+$form.Controls.Add($lblUE2Modem)
+
+# UE1 <-> UE2 Swap 버튼 (리스트 아래)
+$btnSwapUE = New-Object System.Windows.Forms.Button
+$btnSwapUE.Text = "Swap UE1 <-> UE2"
+$btnSwapUE.Location = New-Object System.Drawing.Point(20, 80)
+$btnSwapUE.Size = New-Object System.Drawing.Size(150, 25)
+Set-DarkButtonStyle $btnSwapUE
+$form.Controls.Add($btnSwapUE)
+
+# (숨겨둔) 수동 모뎀 매핑 버튼 - 필요시 보이게 할 수 있음
+$btnSetUE1 = New-Object System.Windows.Forms.Button
+$btnSetUE1.Text = "Set as UE1"
+$btnSetUE1.Location = New-Object System.Drawing.Point(800, 70)
+$btnSetUE1.Size = New-Object System.Drawing.Size(100, 25)
+Set-DarkButtonStyle $btnSetUE1
+$btnSetUE1.Visible = $false
+$form.Controls.Add($btnSetUE1)
+
+$btnSetUE2 = New-Object System.Windows.Forms.Button
+$btnSetUE2.Text = "Set as UE2"
+$btnSetUE2.Location = New-Object System.Drawing.Point(800, 100)
+$btnSetUE2.Size = New-Object System.Drawing.Size(100, 25)
+Set-DarkButtonStyle $btnSetUE2
+$btnSetUE2.Visible = $false
+$form.Controls.Add($btnSetUE2)
+
+# =====================================================================
 # 1) 왼쪽 영역: iperf3 2-UE Bidirectional Throughput
-# =========================================================
+# =====================================================================
 [int]$labelX = 20
 [int]$inputX = 190
 [int]$widthLabel = 160
 [int]$widthInput = 240
 [int]$height = 23
 [int]$gap = 8
-[int]$y = 20
-
-# =========================================================
-#   Remote NDIS IP List (자동 검색 + 선택 적용)
-# =========================================================
-[int]$ndisTopY = $y
-
-$labelNdis = New-Object System.Windows.Forms.Label
-$labelNdis.Text = "Remote NDIS Compatible Device IPv4 List"
-$labelNdis.Location = New-Object System.Drawing.Point($labelX, $ndisTopY)
-$labelNdis.Size = New-Object System.Drawing.Size(260, $height)
-Set-DarkLabelStyle $labelNdis
-$form.Controls.Add($labelNdis)
-
-$listNdis = New-Object System.Windows.Forms.ListBox
-$listNdis.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height))
-$listNdis.Size = New-Object System.Drawing.Size(370, 100)
-$listNdis.BackColor = $textBgColor
-$listNdis.ForeColor = $textFgColor
-$form.Controls.Add($listNdis)
-
-$btnNdisRefresh = New-Object System.Windows.Forms.Button
-$btnNdisRefresh.Text = "Refresh UE IP"
-$btnNdisRefresh.Location = New-Object System.Drawing.Point($labelX, ($ndisTopY + $height + 110))
-$btnNdisRefresh.Size = New-Object System.Drawing.Size(120, 30)
-Set-DarkButtonStyle $btnNdisRefresh
-$form.Controls.Add($btnNdisRefresh)
-
-$btnApplyUe1 = New-Object System.Windows.Forms.Button
-$btnApplyUe1.Text = "Apply to UE1"
-$btnApplyUe1.Location = New-Object System.Drawing.Point(($labelX + 130), ($ndisTopY + $height + 110))
-$btnApplyUe1.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnApplyUe1
-$form.Controls.Add($btnApplyUe1)
-
-$btnApplyUe2 = New-Object System.Windows.Forms.Button
-$btnApplyUe2.Text = "Apply to UE2"
-$btnApplyUe2.Location = New-Object System.Drawing.Point(($labelX + 240), ($ndisTopY + $height + 110))
-$btnApplyUe2.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnApplyUe2
-$form.Controls.Add($btnApplyUe2)
-
-$y = $ndisTopY + $height + 110 + 40 + (2 * $gap)
+[int]$y = 150      # 상단 Device Info 를 위해 여유를 두고 시작
 
 # ----- Server IP -----
 $labelServerIp = New-Object System.Windows.Forms.Label
@@ -122,9 +135,9 @@ $textServerIp.Text = "10.36.10.250"
 Set-DarkTextBoxStyle $textServerIp
 $form.Controls.Add($textServerIp)
 
-$y += $height + (4 * $gap)
+$y += $height + (3 * $gap)
 
-# ----- Route Buttons (Admin CMD) -----
+# ----- Route Buttons -----
 $buttonRouteAdmin = New-Object System.Windows.Forms.Button
 $buttonRouteAdmin.Text = "Add Routing"
 $buttonRouteAdmin.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -139,9 +152,9 @@ $buttonRouteDelete.Size = New-Object System.Drawing.Size(200, 30)
 Set-DarkButtonStyle $buttonRouteDelete
 $form.Controls.Add($buttonRouteDelete)
 
-$y += $height + (4 * $gap)
+$y += $height + (3 * $gap)
 
-# ----- UE1 / UE2 Enable Checkboxes -----
+# ----- UE Enable Checkboxes -----
 $checkUE1 = New-Object System.Windows.Forms.CheckBox
 $checkUE1.Text = "Enable UE1 (DL1/UL1, Bind #1)"
 $checkUE1.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -162,7 +175,7 @@ $form.Controls.Add($checkUE2)
 
 $y += $height + (2 * $gap)
 
-# ----- DL1 Port (Bind1) -----
+# ----- Port / BW / IP / Time / Protocol -----
 $labelDl1Port = New-Object System.Windows.Forms.Label
 $labelDl1Port.Text = "DL1 Port (UE1 / Bind #1)"
 $labelDl1Port.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -179,7 +192,6 @@ $form.Controls.Add($textDl1Port)
 
 $y += $height + $gap
 
-# ----- UL1 Port (Bind1) -----
 $labelUl1Port = New-Object System.Windows.Forms.Label
 $labelUl1Port.Text = "UL1 Port (UE1 / Bind #1)"
 $labelUl1Port.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -196,7 +208,6 @@ $form.Controls.Add($textUl1Port)
 
 $y += $height + $gap
 
-# ----- DL2 Port (Bind2) -----
 $labelDl2Port = New-Object System.Windows.Forms.Label
 $labelDl2Port.Text = "DL2 Port (UE2 / Bind #2)"
 $labelDl2Port.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -213,7 +224,6 @@ $form.Controls.Add($textDl2Port)
 
 $y += $height + $gap
 
-# ----- UL2 Port (Bind2) -----
 $labelUl2Port = New-Object System.Windows.Forms.Label
 $labelUl2Port.Text = "UL2 Port (UE2 / Bind #2)"
 $labelUl2Port.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -230,7 +240,6 @@ $form.Controls.Add($textUl2Port)
 
 $y += $height + (2 * $gap)
 
-# ----- Download BW -----
 $labelDlBw = New-Object System.Windows.Forms.Label
 $labelDlBw.Text = "Download BW"
 $labelDlBw.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -247,7 +256,6 @@ $form.Controls.Add($textDlBw)
 
 $y += $height + $gap
 
-# ----- Upload BW -----
 $labelUlBw = New-Object System.Windows.Forms.Label
 $labelUlBw.Text = "Upload BW"
 $labelUlBw.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -264,7 +272,6 @@ $form.Controls.Add($textUlBw)
 
 $y += $height + $gap
 
-# ----- Bind IP #1 -----
 $labelBindIp1 = New-Object System.Windows.Forms.Label
 $labelBindIp1.Text = "Bind IP #1 (UE1)"
 $labelBindIp1.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -275,13 +282,12 @@ $form.Controls.Add($labelBindIp1)
 $textBindIp1 = New-Object System.Windows.Forms.TextBox
 $textBindIp1.Location = New-Object System.Drawing.Point($inputX, $y)
 $textBindIp1.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textBindIp1.Text = "192.168.225.30"
+$textBindIp1.Text = "192.168.225.82"
 Set-DarkTextBoxStyle $textBindIp1
 $form.Controls.Add($textBindIp1)
 
 $y += $height + $gap
 
-# ----- Bind IP #2 -----
 $labelBindIp2 = New-Object System.Windows.Forms.Label
 $labelBindIp2.Text = "Bind IP #2 (UE2)"
 $labelBindIp2.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -292,13 +298,12 @@ $form.Controls.Add($labelBindIp2)
 $textBindIp2 = New-Object System.Windows.Forms.TextBox
 $textBindIp2.Location = New-Object System.Drawing.Point($inputX, $y)
 $textBindIp2.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textBindIp2.Text = "192.168.225.82"
+$textBindIp2.Text = "192.168.225.30"
 Set-DarkTextBoxStyle $textBindIp2
 $form.Controls.Add($textBindIp2)
 
 $y += $height + $gap
 
-# ----- Duration -----
 $labelTime = New-Object System.Windows.Forms.Label
 $labelTime.Text = "Duration (sec)"
 $labelTime.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -315,7 +320,6 @@ $form.Controls.Add($textTime)
 
 $y += $height + $gap
 
-# ----- Protocol -----
 $labelProto = New-Object System.Windows.Forms.Label
 $labelProto.Text = "Protocol"
 $labelProto.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -334,7 +338,6 @@ $form.Controls.Add($comboProto)
 
 $y += $height + (2 * $gap)
 
-# ----- iperf Buttons -----
 $buttonStart = New-Object System.Windows.Forms.Button
 $buttonStart.Text = "Start Selected UEs"
 $buttonStart.Location = New-Object System.Drawing.Point(40, $y)
@@ -349,7 +352,7 @@ $buttonStop.Size = New-Object System.Drawing.Size(160, 40)
 Set-DarkButtonStyle $buttonStop
 $form.Controls.Add($buttonStop)
 
-$y += $height + 2*$gap + 30
+$y += $height + (2 * $gap) + 30
 
 $buttonClose = New-Object System.Windows.Forms.Button
 $buttonClose.Text = "Exit"
@@ -358,12 +361,173 @@ $buttonClose.Size = New-Object System.Drawing.Size(120, 40)
 Set-DarkButtonStyle $buttonClose
 $form.Controls.Add($buttonClose)
 
-# =========================================================
-#   Remote NDIS IP 탐색 함수
-# =========================================================
+# =====================================================================
+# 2) 오른쪽 영역: AT Command + Ping
+# =====================================================================
+[int]$baseX = 520
+[int]$y2   = 140
+
+$grpAt = New-Object System.Windows.Forms.GroupBox
+$grpAt.Text = "AT Command"
+$grpAt.Location = New-Object System.Drawing.Point($baseX, $y2)
+$grpAt.Size = New-Object System.Drawing.Size(430, 310)
+$grpAt.ForeColor = $labelColor
+$form.Controls.Add($grpAt)
+
+$lblTarget = New-Object System.Windows.Forms.Label
+$lblTarget.Text = "Target UEs:"
+$lblTarget.AutoSize = $true
+$lblTarget.Location = New-Object System.Drawing.Point(15, 25)
+$grpAt.Controls.Add($lblTarget)
+
+$chkTargetUE1 = New-Object System.Windows.Forms.CheckBox
+$chkTargetUE1.Text = "UE1"
+$chkTargetUE1.Location = New-Object System.Drawing.Point(90, 23)
+$chkTargetUE1.Size = New-Object System.Drawing.Size(60, 20)
+$chkTargetUE1.Checked = $true
+Set-DarkCheckBoxStyle $chkTargetUE1
+$grpAt.Controls.Add($chkTargetUE1)
+
+$chkTargetUE2 = New-Object System.Windows.Forms.CheckBox
+$chkTargetUE2.Text = "UE2"
+$chkTargetUE2.Location = New-Object System.Drawing.Point(150, 23)
+$chkTargetUE2.Size = New-Object System.Drawing.Size(60, 20)
+$chkTargetUE2.Checked = $true
+Set-DarkCheckBoxStyle $chkTargetUE2
+$grpAt.Controls.Add($chkTargetUE2)
+
+$lblCmd = New-Object System.Windows.Forms.Label
+$lblCmd.Text = "Command"
+$lblCmd.AutoSize = $true
+$lblCmd.Location = New-Object System.Drawing.Point(15, 55)
+$grpAt.Controls.Add($lblCmd)
+
+$txtCmd = New-Object System.Windows.Forms.TextBox
+$txtCmd.Location = New-Object System.Drawing.Point(15, 75)
+$txtCmd.Size = New-Object System.Drawing.Size(220, 23)
+$txtCmd.BackColor = $textBgColor
+$txtCmd.ForeColor = $textFgColor
+$grpAt.Controls.Add($txtCmd)
+
+$btnSend = New-Object System.Windows.Forms.Button
+$btnSend.Text = "Send"
+$btnSend.Location = New-Object System.Drawing.Point(245, 73)
+$btnSend.Size = New-Object System.Drawing.Size(60, 26)
+Set-DarkButtonStyle $btnSend
+$grpAt.Controls.Add($btnSend)
+
+$btnCFUN0 = New-Object System.Windows.Forms.Button
+$btnCFUN0.Text = "CFUN=0"
+$btnCFUN0.Location = New-Object System.Drawing.Point(315, 73)
+$btnCFUN0.Size = New-Object System.Drawing.Size(80, 26)
+Set-DarkButtonStyle $btnCFUN0
+$grpAt.Controls.Add($btnCFUN0)
+
+$btnCFUN1 = New-Object System.Windows.Forms.Button
+$btnCFUN1.Text = "CFUN=1"
+$btnCFUN1.Location = New-Object System.Drawing.Point(315, 105)
+$btnCFUN1.Size = New-Object System.Drawing.Size(80, 26)
+Set-DarkButtonStyle $btnCFUN1
+$grpAt.Controls.Add($btnCFUN1)
+
+$lblLog = New-Object System.Windows.Forms.Label
+$lblLog.Text = "Log:"
+$lblLog.AutoSize = $true
+$lblLog.Location = New-Object System.Drawing.Point(15, 110)
+$grpAt.Controls.Add($lblLog)
+
+$txtLog = New-Object System.Windows.Forms.RichTextBox
+$txtLog.Location = New-Object System.Drawing.Point(15, 130)
+$txtLog.Size = New-Object System.Drawing.Size(400, 160)
+$txtLog.ReadOnly = $true
+$txtLog.ScrollBars = "Vertical"
+$txtLog.BackColor = $textBgColor
+$txtLog.ForeColor = $textFgColor
+$grpAt.Controls.Add($txtLog)
+
+# AT Log 출력 함수
+function Add-Log {
+    param(
+        [string]$Message,
+        [System.Drawing.Color]$Color = $colorDefaultLog
+    )
+    $time = Get-Date -Format "HH:mm:ss"
+    $line = "$time  $Message`r`n"
+
+    $txtLog.SelectionStart = $txtLog.TextLength
+    $txtLog.SelectionLength = 0
+    $txtLog.SelectionColor = $Color
+    $txtLog.AppendText($line)
+    $txtLog.SelectionColor = $colorDefaultLog
+
+    $txtLog.SelectionStart = $txtLog.TextLength
+    $txtLog.ScrollToCaret()
+}
+
+# ----- Ping 영역 -----
+[int]$pingTopY = $y2 + 320
+
+$grpPing = New-Object System.Windows.Forms.GroupBox
+$grpPing.Text = "UE -> Server Ping"
+$grpPing.Location = New-Object System.Drawing.Point($baseX, $pingTopY)
+$grpPing.Size = New-Object System.Drawing.Size(430, 210)
+$grpPing.ForeColor = $labelColor
+$form.Controls.Add($grpPing)
+
+$checkPingUE1 = New-Object System.Windows.Forms.CheckBox
+$checkPingUE1.Text = "Ping UE1 -> Server"
+$checkPingUE1.Location = New-Object System.Drawing.Point(15, 25)
+$checkPingUE1.Size = New-Object System.Drawing.Size(160, 20)
+Set-DarkCheckBoxStyle $checkPingUE1
+$grpPing.Controls.Add($checkPingUE1)
+
+$checkPingUE2 = New-Object System.Windows.Forms.CheckBox
+$checkPingUE2.Text = "Ping UE2 -> Server"
+$checkPingUE2.Location = New-Object System.Drawing.Point(200, 25)
+$checkPingUE2.Size = New-Object System.Drawing.Size(160, 20)
+Set-DarkCheckBoxStyle $checkPingUE2
+$grpPing.Controls.Add($checkPingUE2)
+
+$lblPingLog = New-Object System.Windows.Forms.Label
+$lblPingLog.Text = "Ping Log:"
+$lblPingLog.AutoSize = $true
+$lblPingLog.Location = New-Object System.Drawing.Point(15, 50)
+$grpPing.Controls.Add($lblPingLog)
+
+$txtPingLog = New-Object System.Windows.Forms.RichTextBox
+$txtPingLog.Location = New-Object System.Drawing.Point(15, 70)
+$txtPingLog.Size = New-Object System.Drawing.Size(400, 120)
+$txtPingLog.ReadOnly = $true
+$txtPingLog.ScrollBars = "Vertical"
+$txtPingLog.BackColor = $textBgColor
+$txtPingLog.ForeColor = $textFgColor
+$grpPing.Controls.Add($txtPingLog)
+
+function Add-PingLog {
+    param(
+        [string]$Message,
+        [System.Drawing.Color]$Color = $colorDefaultLog
+    )
+    $time = Get-Date -Format "HH:mm:ss"
+    $line = "$time  $Message`r`n"
+
+    $txtPingLog.SelectionStart = $txtPingLog.TextLength
+    $txtPingLog.SelectionLength = 0
+    $txtPingLog.SelectionColor = $Color
+    $txtPingLog.AppendText($line)
+    $txtPingLog.SelectionColor = $colorDefaultLog
+
+    $txtPingLog.SelectionStart = $txtPingLog.TextLength
+    $txtPingLog.ScrollToCaret()
+}
+
+# =====================================================================
+# 공통 유틸 함수: Remote NDIS / Route / Modem / Summary
+# =====================================================================
+
+# NDIS IP 리스트 검색
 function Get-NdisIpList {
     $ips = @()
-
     try {
         $cfgs = Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue |
                 Where-Object { $_.IPEnabled }
@@ -382,11 +546,9 @@ function Get-NdisIpList {
                 continue
             }
 
-            $ipv4s = $cfg.IPAddress |
-                     Where-Object {
-                         $_ -match '^\d+\.\d+\.\d+\.\d+$' -and
-                         $_ -notlike "169.254.*"
-                     }
+            $ipv4s = $cfg.IPAddress | Where-Object {
+                $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -notlike "169.254.*"
+            }
 
             foreach ($ip in $ipv4s) {
                 if ($ips -notcontains $ip) {
@@ -395,32 +557,21 @@ function Get-NdisIpList {
             }
         }
     }
-    catch {
-    }
+    catch { }
 
     return $ips
 }
 
-function Refresh-NdisList {
-    $listNdis.Items.Clear()
+function Refresh-NdisBindIps {
     $ips = Get-NdisIpList
-
-    if (-not $ips -or $ips.Count -eq 0) {
-        [void]$listNdis.Items.Add("No Remote NDIS IP found")
-        return
-    }
-
-    foreach ($ip in $ips) {
-        [void]$listNdis.Items.Add($ip)
-    }
 
     if ($ips.Count -ge 1) { $textBindIp1.Text = $ips[0] }
     if ($ips.Count -ge 2) { $textBindIp2.Text = $ips[1] }
+
+    Update-UeSummaryLabels
 }
 
-# =========================================================
-#   특정 IP가 붙어있는 NIC의 Gateway + IF Index 찾기 함수
-# =========================================================
+# 특 IP가 붙은 NIC 의 Gateway/IF Index
 function Get-RouteInfoForIp {
     param(
         [string]$IpAddress
@@ -431,9 +582,7 @@ function Get-RouteInfoForIp {
         IfIndex = $null
     }
 
-    if (-not $IpAddress) {
-        return $result
-    }
+    if (-not $IpAddress) { return $result }
 
     try {
         $cfgs = Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue |
@@ -451,15 +600,104 @@ function Get-RouteInfoForIp {
             }
         }
     }
-    catch {
-    }
+    catch { }
 
     return $result
 }
 
-# ===== iperf / Route Events =====
+# AT용 모뎀 포트 검색 (Win32_POTSModem)
+function Detect-ModemPorts {
+    $global:ModemList = @()
+    $global:Ue1ModemIndex = $null
+    $global:Ue2ModemIndex = $null
+
+    try {
+        $modems = Get-CimInstance Win32_POTSModem -ErrorAction Stop
+    }
+    catch {
+        $modems = Get-WmiObject Win32_POTSModem -ErrorAction SilentlyContinue
+    }
+
+    if ($modems) {
+        $modems = $modems | Where-Object { $_.AttachedTo -match "^COM\d+" }
+    }
+
+    if (-not $modems -or $modems.Count -eq 0) {
+        Add-Log "No modem ports found (Win32_POTSModem empty)"
+        Update-UeSummaryLabels
+        return
+    }
+
+    foreach ($m in $modems) {
+        $global:ModemList += $m
+    }
+
+    # 기본 매핑: 0 -> UE1, 1 -> UE2
+    if ($global:ModemList.Count -ge 1) { $global:Ue1ModemIndex = 0 }
+    if ($global:ModemList.Count -ge 2) { $global:Ue2ModemIndex = 1 }
+
+    Add-Log "Detected $($global:ModemList.Count) modem port(s)."
+
+    Update-UeSummaryLabels
+}
+
+# 상단 Device Info 라벨 업데이트
+function Update-UeSummaryLabels {
+    # UE1
+    $ip1  = $textBindIp1.Text.Trim()
+    $mod1 = "(not set)"
+
+    if ($global:Ue1ModemIndex -ne $null -and
+        $global:Ue1ModemIndex -ge 0 -and
+        $global:Ue1ModemIndex -lt $global:ModemList.Count) {
+        $m1 = $global:ModemList[$global:Ue1ModemIndex]
+        $mod1 = "$($m1.Name) ($($m1.AttachedTo))"
+    }
+
+    if ($ip1 -and $mod1 -ne "(not set)") {
+        $lblUE1Modem.Text = "UE1:  $ip1 - $mod1"
+    }
+    elseif ($ip1) {
+        $lblUE1Modem.Text = "UE1:  $ip1 - (modem not set)"
+    }
+    elseif ($mod1 -ne "(not set)") {
+        $lblUE1Modem.Text = "UE1:  (no IP) - $mod1"
+    }
+    else {
+        $lblUE1Modem.Text = "UE1:  (not set)"
+    }
+
+    # UE2
+    $ip2  = $textBindIp2.Text.Trim()
+    $mod2 = "(not set)"
+
+    if ($global:Ue2ModemIndex -ne $null -and
+        $global:Ue2ModemIndex -ge 0 -and
+        $global:Ue2ModemIndex -lt $global:ModemList.Count) {
+        $m2 = $global:ModemList[$global:Ue2ModemIndex]
+        $mod2 = "$($m2.Name) ($($m2.AttachedTo))"
+    }
+
+    if ($ip2 -and $mod2 -ne "(not set)") {
+        $lblUE2Modem.Text = "UE2:  $ip2 - $mod2"
+    }
+    elseif ($ip2) {
+        $lblUE2Modem.Text = "UE2:  $ip2 - (modem not set)"
+    }
+    elseif ($mod2 -ne "(not set)") {
+        $lblUE2Modem.Text = "UE2:  (no IP) - $mod2"
+    }
+    else {
+        $lblUE2Modem.Text = "UE2:  (not set)"
+    }
+}
+
+# =====================================================================
+# 이벤트 핸들러
+# =====================================================================
+
+# Exit 버튼
 $buttonClose.Add_Click({
-    # 폼 종료 시 ping job 도 같이 정리
     if ($global:PingJobUE1) {
         try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
         try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
@@ -473,18 +711,19 @@ $buttonClose.Add_Click({
     $form.Close()
 })
 
+# iperf Start
 $buttonStart.Add_Click({
     $server = $textServerIp.Text.Trim()
-    $dl1p = $textDl1Port.Text.Trim()
-    $ul1p = $textUl1Port.Text.Trim()
-    $dl2p = $textDl2Port.Text.Trim()
-    $ul2p = $textUl2Port.Text.Trim()
-    $dlBw = $textDlBw.Text.Trim()
-    $ulBw = $textUlBw.Text.Trim()
-    $bind1 = $textBindIp1.Text.Trim()
-    $bind2 = $textBindIp2.Text.Trim()
-    $t = $textTime.Text.Trim()
-    $proto = $comboProto.SelectedItem
+    $dl1p   = $textDl1Port.Text.Trim()
+    $ul1p   = $textUl1Port.Text.Trim()
+    $dl2p   = $textDl2Port.Text.Trim()
+    $ul2p   = $textUl2Port.Text.Trim()
+    $dlBw   = $textDlBw.Text.Trim()
+    $ulBw   = $textUlBw.Text.Trim()
+    $bind1  = $textBindIp1.Text.Trim()
+    $bind2  = $textBindIp2.Text.Trim()
+    $t      = $textTime.Text.Trim()
+    $proto  = $comboProto.SelectedItem
     $useUE1 = $checkUE1.Checked
     $useUE2 = $checkUE2.Checked
 
@@ -535,6 +774,7 @@ $buttonStart.Add_Click({
     [System.Windows.Forms.MessageBox]::Show("Selected UE sessions have been started.", "iperf3") | Out-Null
 })
 
+# iperf Stop
 $buttonStop.Add_Click({
     try {
         $iperf = Get-Process iperf3 -ErrorAction SilentlyContinue
@@ -543,9 +783,7 @@ $buttonStop.Add_Click({
         }
 
         foreach ($psId in $global:psList) {
-            try {
-                Stop-Process -Id $psId -Force -ErrorAction SilentlyContinue
-            } catch {}
+            try { Stop-Process -Id $psId -Force -ErrorAction SilentlyContinue } catch {}
         }
 
         $global:psList = @()
@@ -557,7 +795,7 @@ $buttonStop.Add_Click({
     }
 })
 
-# Route 버튼: Gateway + IF 자동 적용, 관리자 CMD
+# Routing Add
 $buttonRouteAdmin.Add_Click({
     $server = $textServerIp.Text.Trim()
     $bind1  = $textBindIp1.Text.Trim()
@@ -596,7 +834,6 @@ $buttonRouteAdmin.Add_Click({
     }
 
     $cmdLine = $cmdParts -join " & "
-
     try {
         Start-Process "cmd.exe" -Verb RunAs -ArgumentList "/k $cmdLine" | Out-Null
     }
@@ -605,18 +842,15 @@ $buttonRouteAdmin.Add_Click({
     }
 })
 
-# ===== 여기 아래에 Route Delete 추가 =====
+# Routing Delete
 $buttonRouteDelete.Add_Click({
     $server = $textServerIp.Text.Trim()
-
     if (-not $server) {
         [System.Windows.Forms.MessageBox]::Show("Server IP is empty.", "Route Delete Error") | Out-Null
         return
     }
 
-    # 해당 서버 IP 에 대한 라우트 전체 삭제
     $cmdLine = "route DELETE $server"
-
     try {
         Start-Process "cmd.exe" -Verb RunAs -ArgumentList "/k $cmdLine" | Out-Null
     }
@@ -625,205 +859,43 @@ $buttonRouteDelete.Add_Click({
     }
 })
 
-
-# =========================================================
-# 2) 오른쪽 영역: Modem AT Command Tool (Multi-port)
-# =========================================================
-[int]$baseX = 520
-[int]$y2 = 20
-
-$labelList = New-Object System.Windows.Forms.Label
-$labelList.Text = "AT Modem Port List"
-$labelList.AutoSize = $true
-$labelList.Location = New-Object System.Drawing.Point($baseX, $y2)
-Set-DarkLabelStyle $labelList
-$form.Controls.Add($labelList)
-
-$listPorts = New-Object System.Windows.Forms.ListBox
-$listPorts.Location = New-Object System.Drawing.Point($baseX, ($y2 + 25))
-$listPorts.Size = New-Object System.Drawing.Size(380, 150)
-$listPorts.BackColor = $textBgColor
-$listPorts.ForeColor = $textFgColor
-$listPorts.SelectionMode = "MultiExtended"
-$form.Controls.Add($listPorts)
-
-$statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.AutoSize = $true
-$statusLabel.Location = New-Object System.Drawing.Point($baseX, ($y2 + 185))
-$statusLabel.ForeColor = [System.Drawing.Color]::LightGray
-$form.Controls.Add($statusLabel)
-
-$btnRefresh = New-Object System.Windows.Forms.Button
-$btnRefresh.Text = "Refresh"
-$btnRefresh.Location = New-Object System.Drawing.Point($baseX, ($y2 + 215))
-$btnRefresh.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnRefresh
-$form.Controls.Add($btnRefresh)
-
-$btnSelectAll = New-Object System.Windows.Forms.Button
-$btnSelectAll.Text = "Select All"
-$btnSelectAll.Location = New-Object System.Drawing.Point(($baseX + 120), ($y2 + 215))
-$btnSelectAll.Size = New-Object System.Drawing.Size(100, 30)
-Set-DarkButtonStyle $btnSelectAll
-$form.Controls.Add($btnSelectAll)
-
-$grpAt = New-Object System.Windows.Forms.GroupBox
-$grpAt.Text = "AT Command"
-$grpAt.Location = New-Object System.Drawing.Point($baseX, ($y2 + 260))
-$grpAt.Size = New-Object System.Drawing.Size(380, 300)
-$grpAt.ForeColor = $labelColor
-$form.Controls.Add($grpAt)
-
-$lblSelected = New-Object System.Windows.Forms.Label
-$lblSelected.Text = "Selected modems: 0"
-$lblSelected.AutoSize = $true
-$lblSelected.Location = New-Object System.Drawing.Point(15, 25)
-$grpAt.Controls.Add($lblSelected)
-
-$lblCmd = New-Object System.Windows.Forms.Label
-$lblCmd.Text = "Command"
-$lblCmd.AutoSize = $true
-$lblCmd.Location = New-Object System.Drawing.Point(15, 55)
-$grpAt.Controls.Add($lblCmd)
-
-$txtCmd = New-Object System.Windows.Forms.TextBox
-$txtCmd.Location = New-Object System.Drawing.Point(15, 75)
-$txtCmd.Size = New-Object System.Drawing.Size(200, 23)
-$txtCmd.BackColor = $textBgColor
-$txtCmd.ForeColor = $textFgColor
-$grpAt.Controls.Add($txtCmd)
-
-$btnSend = New-Object System.Windows.Forms.Button
-$btnSend.Text = "Send"
-$btnSend.Location = New-Object System.Drawing.Point(225, 73)
-$btnSend.Size = New-Object System.Drawing.Size(60, 26)
-Set-DarkButtonStyle $btnSend
-$grpAt.Controls.Add($btnSend)
-
-$btnCFUN0 = New-Object System.Windows.Forms.Button
-$btnCFUN0.Text = "CFUN=0"
-$btnCFUN0.Location = New-Object System.Drawing.Point(295, 73)
-$btnCFUN0.Size = New-Object System.Drawing.Size(70, 26)
-Set-DarkButtonStyle $btnCFUN0
-$grpAt.Controls.Add($btnCFUN0)
-
-$btnCFUN1 = New-Object System.Windows.Forms.Button
-$btnCFUN1.Text = "CFUN=1"
-$btnCFUN1.Location = New-Object System.Drawing.Point(295, 105)
-$btnCFUN1.Size = New-Object System.Drawing.Size(70, 26)
-Set-DarkButtonStyle $btnCFUN1
-$grpAt.Controls.Add($btnCFUN1)
-
-$lblLog = New-Object System.Windows.Forms.Label
-$lblLog.Text = "Log:"
-$lblLog.AutoSize = $true
-$lblLog.Location = New-Object System.Drawing.Point(15, 110)
-$grpAt.Controls.Add($lblLog)
-
-# ===== AT Log: RichTextBox 로 변경 =====
-$txtLog = New-Object System.Windows.Forms.RichTextBox
-$txtLog.Location = New-Object System.Drawing.Point(15, 140)
-$txtLog.Size = New-Object System.Drawing.Size(350, 150)
-$txtLog.ReadOnly = $true
-$txtLog.ScrollBars = "Vertical"
-$txtLog.BackColor = $textBgColor
-$txtLog.ForeColor = $textFgColor
-$grpAt.Controls.Add($txtLog)
-
-$grpAt.Enabled = $false
-
-# ===== 색상 지원 Add-Log 함수 =====
-function Add-Log {
-    param(
-        [string]$Message,
-        [System.Drawing.Color]$Color = $colorDefaultLog
-    )
-    $time = Get-Date -Format "HH:mm:ss"
-    $line = "$time  $Message`r`n"
-
-    $txtLog.SelectionStart = $txtLog.TextLength
-    $txtLog.SelectionLength = 0
-    $txtLog.SelectionColor = $Color
-    $txtLog.AppendText($line)
-    $txtLog.SelectionColor = $colorDefaultLog
-
-    # 자동 스크롤
-    $txtLog.SelectionStart = $txtLog.TextLength
-    $txtLog.ScrollToCaret()
-}
-
-function Update-SelectedCount {
-    $count = $listPorts.SelectedIndices.Count
-    $lblSelected.Text = "Selected modems: $count"
-}
-
-function Detect-ModemPorts {
-    $listPorts.Items.Clear()
-    $txtLog.Clear()
-    $txtCmd.Clear()
-    $global:ModemList = @()
-    $lblSelected.Text = "Selected modems: 0"
-    $statusLabel.Text = ""
-    $grpAt.Enabled = $false
-
-    try {
-        $modems = Get-CimInstance Win32_POTSModem -ErrorAction Stop
-    }
-    catch {
-        $modems = Get-WmiObject Win32_POTSModem -ErrorAction SilentlyContinue
-    }
-
-    if (-not $modems) {
-        $listPorts.Items.Add("No modem ports found (Win32_POTSModem empty)")
-        $statusLabel.Text = "$(Get-Date -Format 'HH:mm:ss') - No modem ports found"
-        return
-    }
-
-    $modems = $modems | Where-Object { $_.AttachedTo -match "^COM\d+" }
-
-    if (-not $modems -or $modems.Count -eq 0) {
-        $listPorts.Items.Add("No modem ports with COM attached")
-        $statusLabel.Text = "$(Get-Date -Format 'HH:mm:ss') - No modem COM ports found"
-        return
-    }
-
-    foreach ($m in $modems) {
-        $display = "$($m.Name) ($($m.AttachedTo))"
-        $listPorts.Items.Add($display)
-        $global:ModemList += $m
-    }
-
-    $statusLabel.Text = "$(Get-Date -Format 'HH:mm:ss') - $($modems.Count) modem port(s) detected"
-    $grpAt.Enabled = $true
-}
-
-function Send-ATCommand {
+# AT Command 전송
+function Send-ATToTargets {
     param([string]$Command)
 
-    $selectedIndices = $listPorts.SelectedIndices
-    if ($selectedIndices.Count -eq 0) {
-        Add-Log "No modem selected"
+    $cmd = $Command.Trim()
+    if (-not $cmd) {
+        Add-Log "No command to send"
         return
     }
 
-    $cmd = $Command.Trim()
-    if ($cmd -eq "") {
-        Add-Log "No command to send"
+    # 대상 UE -> 모뎀 인덱스 리스트 구성
+    $indices = @()
+
+    if ($chkTargetUE1.Checked -and $global:Ue1ModemIndex -ne $null) {
+        $indices += $global:Ue1ModemIndex
+    }
+    if ($chkTargetUE2.Checked -and $global:Ue2ModemIndex -ne $null) {
+        $indices += $global:Ue2ModemIndex
+    }
+
+    if ($indices.Count -eq 0) {
+        Add-Log "No target UE selected / modem not mapped"
         return
     }
 
     $send = $cmd + "`r`n"
 
-    foreach ($idx in $selectedIndices) {
+    foreach ($idx in $indices) {
         if ($idx -lt 0 -or $idx -ge $global:ModemList.Count) { continue }
 
         $modem = $global:ModemList[$idx]
         $portName = $modem.AttachedTo
 
-        # 포트별 색상 (0번: UE1, 1번: UE2 가정)
+        # 인덱스에 따라 색 결정
         $logColor = $colorDefaultLog
-        if ($idx -eq 0) { $logColor = $colorUE1 }
-        elseif ($idx -eq 1) { $logColor = $colorUE2 }
+        if ($idx -eq $global:Ue1ModemIndex) { $logColor = $colorUE1 }
+        elseif ($idx -eq $global:Ue2ModemIndex) { $logColor = $colorUE2 }
 
         try {
             $sp = New-Object System.IO.Ports.SerialPort $portName, 115200, "None", 8, "One"
@@ -836,7 +908,7 @@ function Send-ATCommand {
 
             $sp.Open()
 
-            Add-Log "TX ${portName}: $cmd" $logColor
+            Add-Log "[$portName] TX: $cmd" $logColor
 
             $sp.DiscardInBuffer()
             $sp.Write($send)
@@ -847,136 +919,65 @@ function Send-ATCommand {
             while ($sw.ElapsedMilliseconds -lt 2000) {
                 try {
                     $chunk = $sp.ReadExisting()
-                    if ($chunk -and $chunk.Length -gt 0) {
-                        [void]$builder.Append($chunk)
-                    }
+                    if ($chunk -and $chunk.Length -gt 0) { [void]$builder.Append($chunk) }
                 } catch { }
                 Start-Sleep -Milliseconds 100
             }
 
             $resp = $builder.ToString()
-
             if ($resp) {
                 $respLines = $resp -replace "`r`n", "`n" -split "`n"
                 foreach ($line in $respLines) {
-                    if ($line.Trim() -ne "") {
-                        Add-Log "RX ${portName}: $line" $logColor
+                    if ($line.Trim()) {
+                        Add-Log "[$portName] RX: $line" $logColor
                     }
                 }
             }
             else {
-                Add-Log "RX ${portName}: (no data)" $logColor
+                Add-Log "[$portName] RX: (no data)" $logColor
             }
 
             $sp.Close()
         }
         catch {
-            Add-Log "Error on ${portName}: $($_.Exception.Message)" $logColor
+            Add-Log "[$portName] Error: $($_.Exception.Message)" $logColor
         }
     }
 }
 
-$btnRefresh.Add_Click({ Detect-ModemPorts })
-
-$btnSelectAll.Add_Click({
-    for ($i = 0; $i -lt $listPorts.Items.Count; $i++) {
-        $listPorts.SetSelected($i, $true)
-    }
-    Update-SelectedCount
-})
-
-$listPorts.Add_SelectedIndexChanged({ Update-SelectedCount })
-
 $btnSend.Add_Click({
-    Send-ATCommand $txtCmd.Text
+    Send-ATToTargets $txtCmd.Text
 })
 
 $btnCFUN0.Add_Click({
-    Send-ATCommand "AT+CFUN=0"
+    Send-ATToTargets "AT+CFUN=0"
 })
 
 $btnCFUN1.Add_Click({
-    Send-ATCommand "AT+CFUN=1"
+    Send-ATToTargets "AT+CFUN=1"
 })
 
-$btnNdisRefresh.Add_Click({ Refresh-NdisList })
+# Bind IP 변경 시 상단 라벨 갱신
+$textBindIp1.Add_TextChanged({ Update-UeSummaryLabels })
+$textBindIp2.Add_TextChanged({ Update-UeSummaryLabels })
 
-$btnApplyUe1.Add_Click({
-    $sel = $listNdis.SelectedItem
-    if ($sel -and ($sel -notlike "No Remote NDIS IP*")) {
-        $textBindIp1.Text = $sel
-    }
+# UE Swap 버튼
+$btnSwapUE.Add_Click({
+    # Bind IP 스왑
+    $tmpIp = $textBindIp1.Text
+    $textBindIp1.Text = $textBindIp2.Text
+    $textBindIp2.Text = $tmpIp
+
+    # 모뎀 인덱스 스왑
+    $tmpIdx = $global:Ue1ModemIndex
+    $global:Ue1ModemIndex = $global:Ue2ModemIndex
+    $global:Ue2ModemIndex = $tmpIdx
+
+    Update-UeSummaryLabels
+    Add-Log "UE1 / UE2 mapping swapped."
 })
 
-$btnApplyUe2.Add_Click({
-    $sel = $listNdis.SelectedItem
-    if ($sel -and ($sel -notlike "No Remote NDIS IP*")) {
-        $textBindIp2.Text = $sel
-    }
-})
-
-# =========================================================
-# 3) 오른쪽 아래: UE -> Server Ping + Log
-# =========================================================
-[int]$pingTopY = $y2 + 260 + 320   # AT 그룹박스 아래쪽에 위치
-
-$grpPing = New-Object System.Windows.Forms.GroupBox
-$grpPing.Text = "UE -> Server Ping"
-$grpPing.Location = New-Object System.Drawing.Point($baseX, $pingTopY)
-$grpPing.Size = New-Object System.Drawing.Size(380, 200)
-$grpPing.ForeColor = $labelColor
-$form.Controls.Add($grpPing)
-
-$checkPingUE1 = New-Object System.Windows.Forms.CheckBox
-$checkPingUE1.Text = "Ping UE1 -> Server"
-$checkPingUE1.Location = New-Object System.Drawing.Point(15, 25)
-$checkPingUE1.Size = New-Object System.Drawing.Size(160, 20)
-Set-DarkCheckBoxStyle $checkPingUE1
-$grpPing.Controls.Add($checkPingUE1)
-
-$checkPingUE2 = New-Object System.Windows.Forms.CheckBox
-$checkPingUE2.Text = "Ping UE2 -> Server"
-$checkPingUE2.Location = New-Object System.Drawing.Point(200, 25)
-$checkPingUE2.Size = New-Object System.Drawing.Size(160, 20)
-Set-DarkCheckBoxStyle $checkPingUE2
-$grpPing.Controls.Add($checkPingUE2)
-
-$lblPingLog = New-Object System.Windows.Forms.Label
-$lblPingLog.Text = "Ping Log:"
-$lblPingLog.AutoSize = $true
-$lblPingLog.Location = New-Object System.Drawing.Point(15, 50)
-$grpPing.Controls.Add($lblPingLog)
-
-# ===== Ping Log: RichTextBox 로 변경 =====
-$txtPingLog = New-Object System.Windows.Forms.RichTextBox
-$txtPingLog.Location = New-Object System.Drawing.Point(15, 70)
-$txtPingLog.Size = New-Object System.Drawing.Size(350, 110)
-$txtPingLog.ReadOnly = $true
-$txtPingLog.ScrollBars = "Vertical"
-$txtPingLog.BackColor = $textBgColor
-$txtPingLog.ForeColor = $textFgColor
-$grpPing.Controls.Add($txtPingLog)
-
-function Add-PingLog {
-    param(
-        [string]$Message,
-        [System.Drawing.Color]$Color = $colorDefaultLog
-    )
-    $time = Get-Date -Format "HH:mm:ss"
-    $line = "$time  $Message`r`n"
-
-    $txtPingLog.SelectionStart = $txtPingLog.TextLength
-    $txtPingLog.SelectionLength = 0
-    $txtPingLog.SelectionColor = $Color
-    $txtPingLog.AppendText($line)
-    $txtPingLog.SelectionColor = $colorDefaultLog
-
-    # 자동 스크롤
-    $txtPingLog.SelectionStart = $txtPingLog.TextLength
-    $txtPingLog.ScrollToCaret()
-}
-
-# ----- Ping 체크박스 이벤트 -----
+# Ping 체크박스 이벤트
 $checkPingUE1.Add_CheckedChanged({
     if ($checkPingUE1.Checked) {
         $server = $textServerIp.Text.Trim()
@@ -1055,16 +1056,16 @@ $checkPingUE2.Add_CheckedChanged({
     }
 })
 
-# ----- Ping Job 출력 수집용 Timer -----
+# Ping Job 출력 수집용 Timer
 $pingTimer = New-Object System.Windows.Forms.Timer
-$pingTimer.Interval = 1000   # 1초마다
+$pingTimer.Interval = 1000
 $pingTimer.Add_Tick({
     if ($global:PingJobUE1) {
         try {
             $out1 = Receive-Job -Job $global:PingJobUE1 -ErrorAction SilentlyContinue
             if ($out1) {
                 foreach ($line in $out1) {
-                    if ($line -and $line.Trim() -ne "") {
+                    if ($line -and $line.Trim()) {
                         Add-PingLog "[UE1] $line" $colorUE1
                     }
                 }
@@ -1077,7 +1078,7 @@ $pingTimer.Add_Tick({
             $out2 = Receive-Job -Job $global:PingJobUE2 -ErrorAction SilentlyContinue
             if ($out2) {
                 foreach ($line in $out2) {
-                    if ($line -and $line.Trim() -ne "") {
+                    if ($line -and $line.Trim()) {
                         Add-PingLog "[UE2] $line" $colorUE2
                     }
                 }
@@ -1087,10 +1088,10 @@ $pingTimer.Add_Tick({
 })
 $pingTimer.Start()
 
-# ----- 폼 Shown 이벤트 -----
+# 폼 Shown 이벤트
 $form.Add_Shown({
+    Refresh-NdisBindIps
     Detect-ModemPorts
-    Refresh-NdisList
 })
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
