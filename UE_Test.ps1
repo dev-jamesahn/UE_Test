@@ -32,7 +32,7 @@ $colorUE2        = [System.Drawing.Color]::LightSkyBlue
 # ======================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
-$form.ClientSize = New-Object System.Drawing.Size(950, 750)
+$form.ClientSize = New-Object System.Drawing.Size(950, 700)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
@@ -81,33 +81,40 @@ function Set-DarkCheckBoxStyle($cb) {
 
 [int]$y = 10
 
-$lblDeviceInfoTitle = New-Object System.Windows.Forms.Label
-$lblDeviceInfoTitle.Text = "Device Info"
-$lblDeviceInfoTitle.Location = New-Object System.Drawing.Point($labelX, $y)
-$lblDeviceInfoTitle.AutoSize = $true
-Set-DarkLabelStyle $lblDeviceInfoTitle
-$form.Controls.Add($lblDeviceInfoTitle)
+# --- Device Info + UE List 만 그룹박스로 묶기 ---
+$grpDevice = New-Object System.Windows.Forms.GroupBox
+$grpDevice.Text = "Device Info"
+$grpDevice.Location = New-Object System.Drawing.Point(10, $y)
+$grpDevice.Size = New-Object System.Drawing.Size(900, 80)   # 필요하면 높이 조절
+$grpDevice.ForeColor = $labelColor
+$form.Controls.Add($grpDevice)
 
-$y += $height
+# 그룹 내부 좌표
+[int]$gY = 20
+[int]$gX = 10
 
 $lblDeviceUE1 = New-Object System.Windows.Forms.Label
-$lblDeviceUE1.Location = New-Object System.Drawing.Point($labelX, $y)
-$lblDeviceUE1.Size = New-Object System.Drawing.Size(650, $height)
+$lblDeviceUE1.Location = New-Object System.Drawing.Point($gX, $gY)
+
+# 기존: 400 → 그룹 가로(930) - 여백 조금(40) = 890 정도
+$lblDeviceUE1.Size = New-Object System.Drawing.Size(890, $height)
 $lblDeviceUE1.ForeColor = $colorUE1
 $lblDeviceUE1.BackColor = [System.Drawing.Color]::Transparent
-$form.Controls.Add($lblDeviceUE1)
+$grpDevice.Controls.Add($lblDeviceUE1)
 
-$y += $height
+$gY += $height
 
 $lblDeviceUE2 = New-Object System.Windows.Forms.Label
-$lblDeviceUE2.Location = New-Object System.Drawing.Point($labelX, $y)
-$lblDeviceUE2.Size = New-Object System.Drawing.Size(650, $height)
+$lblDeviceUE2.Location = New-Object System.Drawing.Point($gX, $gY)
+$lblDeviceUE2.Size = New-Object System.Drawing.Size(890, $height)
 $lblDeviceUE2.ForeColor = $colorUE2
 $lblDeviceUE2.BackColor = [System.Drawing.Color]::Transparent
-$form.Controls.Add($lblDeviceUE2)
+$grpDevice.Controls.Add($lblDeviceUE2)
 
-$y += $height + 5
+# 그룹박스 아래부터는 기존처럼 폼에 직접 배치
+$y = $grpDevice.Bottom + 10
 
+# Swap 버튼
 $btnSwapUE = New-Object System.Windows.Forms.Button
 $btnSwapUE.Text = "Swap UE1 <-> UE2"
 $btnSwapUE.Location = New-Object System.Drawing.Point($labelX, $y)
@@ -116,10 +123,6 @@ Set-DarkButtonStyle $btnSwapUE
 $form.Controls.Add($btnSwapUE)
 
 $y += $height + 20
-
-# ======================
-# 좌측: iPerf 설정
-# ======================
 
 # iPerf Server IP
 $labelServerIp = New-Object System.Windows.Forms.Label
@@ -155,52 +158,35 @@ $form.Controls.Add($buttonRouteDelete)
 
 $y += $height + (4 * $gap)
 
-# UE Enable
-$checkUE1 = New-Object System.Windows.Forms.CheckBox
-$checkUE1.Text = "Enable UE1 (DL1/UL1, Bind #1)"
-$checkUE1.Location = New-Object System.Drawing.Point($labelX, $y)
-$checkUE1.Size = New-Object System.Drawing.Size(250, $height)
-$checkUE1.Checked = $true
-Set-DarkCheckBoxStyle $checkUE1
-$form.Controls.Add($checkUE1)
-
-$y += $height + $gap
-
-$checkUE2 = New-Object System.Windows.Forms.CheckBox
-$checkUE2.Text = "Enable UE2 (DL2/UL2, Bind #2)"
-$checkUE2.Location = New-Object System.Drawing.Point($labelX, $y)
-$checkUE2.Size = New-Object System.Drawing.Size(250, $height)
-$checkUE2.Checked = $true
-Set-DarkCheckBoxStyle $checkUE2
-$form.Controls.Add($checkUE2)
-
-$y += $height + (2 * $gap)
-
 # ============================
 # DL / UL Ports (2열: UE1 / UE2)
 # ============================
 
-# UE 컬럼 타이틀
-$labelColUe1 = New-Object System.Windows.Forms.Label
-$labelColUe1.Text = "UE1"
-$labelColUe1.Location = New-Object System.Drawing.Point($inputX, $y)
-$labelColUe1.Size = New-Object System.Drawing.Size($widthInput, $height)   # ← 여기
-Set-DarkLabelStyle $labelColUe1
-$form.Controls.Add($labelColUe1)
+# UE 컬럼 타이틀을 체크박스로 사용 (Enable UE1/UE2 역할)
+$checkUE1 = New-Object System.Windows.Forms.CheckBox
+$checkUE1.Text = "Enable UE1"
+$checkUE1.Location = New-Object System.Drawing.Point($inputX, $y)
+$checkUE1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkUE1.Checked = $true
+Set-DarkCheckBoxStyle $checkUE1
+$form.Controls.Add($checkUE1)
 
 $colUe2X = $inputX + $widthInput + 10
-$labelColUe2 = New-Object System.Windows.Forms.Label
-$labelColUe2.Text = "UE2"
-$labelColUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
-$labelColUe2.Size = New-Object System.Drawing.Size($widthInput, $height)   # ← 그리고 여기
-Set-DarkLabelStyle $labelColUe2
-$form.Controls.Add($labelColUe2)
+
+$checkUE2 = New-Object System.Windows.Forms.CheckBox
+$checkUE2.Text = "Enable UE2"
+$checkUE2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$checkUE2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkUE2.Checked = $true
+Set-DarkCheckBoxStyle $checkUE2
+$form.Controls.Add($checkUE2)
 
 $y += $height + $gap
 
+
 # ---- DL Port row ----
 $labelDlPort = New-Object System.Windows.Forms.Label
-$labelDlPort.Text = "DL Port"
+$labelDlPort.Text = "DL Port #"
 $labelDlPort.Location = New-Object System.Drawing.Point($labelX, $y)
 $labelDlPort.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelDlPort
@@ -220,11 +206,11 @@ $textDlPortUe2.Text = "5601"
 Set-DarkTextBoxStyle $textDlPortUe2
 $form.Controls.Add($textDlPortUe2)
 
-$y += $height + $gap
+$y += $height + (2 * $gap)
 
 # ---- UL Port row ----
 $labelUlPort = New-Object System.Windows.Forms.Label
-$labelUlPort.Text = "UL Port"
+$labelUlPort.Text = "UL Port #"
 $labelUlPort.Location = New-Object System.Drawing.Point($labelX, $y)
 $labelUlPort.Size = New-Object System.Drawing.Size($widthLabel, $height)
 Set-DarkLabelStyle $labelUlPort
@@ -268,7 +254,7 @@ $textDlBwUe2.Text = "1000M"
 Set-DarkTextBoxStyle $textDlBwUe2
 $form.Controls.Add($textDlBwUe2)
 
-$y += $height + $gap
+$y += $height + (2 * $gap)
 
 # Upload BW
 $labelUlBw = New-Object System.Windows.Forms.Label
@@ -292,7 +278,7 @@ $textUlBwUe2.Text = "500M"
 Set-DarkTextBoxStyle $textUlBwUe2
 $form.Controls.Add($textUlBwUe2)
 
-$y += $height + $gap
+$y += $height + (2 * $gap)
 
 # Duration
 $labelTime = New-Object System.Windows.Forms.Label
@@ -305,18 +291,18 @@ $form.Controls.Add($labelTime)
 $textTimeUe1 = New-Object System.Windows.Forms.TextBox
 $textTimeUe1.Location = New-Object System.Drawing.Point($inputX, $y)
 $textTimeUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textTimeUe1.Text = "86400"
+$textTimeUe1.Text = "0"
 Set-DarkTextBoxStyle $textTimeUe1
 $form.Controls.Add($textTimeUe1)
 
 $textTimeUe2 = New-Object System.Windows.Forms.TextBox
 $textTimeUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
 $textTimeUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
-$textTimeUe2.Text = "86400"
+$textTimeUe2.Text = "0"
 Set-DarkTextBoxStyle $textTimeUe2
 $form.Controls.Add($textTimeUe2)
 
-$y += $height + $gap
+$y += $height + (2 * $gap)
 
 # Protocol
 $labelProto = New-Object System.Windows.Forms.Label
@@ -349,15 +335,15 @@ $y += $height + (2 * $gap)
 # iperf Buttons (버튼 생성만)
 $buttonStart = New-Object System.Windows.Forms.Button
 $buttonStart.Text = "Start Selected UEs"
-$buttonStart.Location = New-Object System.Drawing.Point(40, $y)
-$buttonStart.Size = New-Object System.Drawing.Size(160, $height)
+$buttonStart.Location = New-Object System.Drawing.Point(50, $y)
+$buttonStart.Size = New-Object System.Drawing.Size(160, 30)
 Set-DarkButtonStyle $buttonStart
 $form.Controls.Add($buttonStart)
 
 $buttonStop = New-Object System.Windows.Forms.Button
 $buttonStop.Text = "Stop All Sessions"
 $buttonStop.Location = New-Object System.Drawing.Point(250, $y)
-$buttonStop.Size = New-Object System.Drawing.Size(160, $height)
+$buttonStop.Size = New-Object System.Drawing.Size(160, 30)
 Set-DarkButtonStyle $buttonStop
 $form.Controls.Add($buttonStop)
 
@@ -366,7 +352,7 @@ $y += $height + 2*$gap + 30
 $buttonClose = New-Object System.Windows.Forms.Button
 $buttonClose.Text = "Exit"
 $buttonClose.Location = New-Object System.Drawing.Point(180, $y)
-$buttonClose.Size = New-Object System.Drawing.Size(120, $height)
+$buttonClose.Size = New-Object System.Drawing.Size(120, 30)
 Set-DarkButtonStyle $buttonClose
 $form.Controls.Add($buttonClose)
 
@@ -451,7 +437,7 @@ function Get-RouteInfoForIp {
 # 오른쪽: AT Command & Ping
 # ======================
 [int]$baseX = 480
-[int]$y2 = 160   # 약간 아래에서 시작
+[int]$y2 = 110   # 약간 아래에서 시작
 
 # AT Command Group
 $grpAt = New-Object System.Windows.Forms.GroupBox
@@ -522,7 +508,7 @@ $lblLog.Location = New-Object System.Drawing.Point(15, 110)
 $grpAt.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.RichTextBox
-$txtLog.Location = New-Object System.Drawing.Point(15, 130)
+$txtLog.Location = New-Object System.Drawing.Point(15, 140)
 $txtLog.Size = New-Object System.Drawing.Size(390, 160)
 $txtLog.ReadOnly = $true
 $txtLog.ScrollBars = "Vertical"
@@ -551,21 +537,21 @@ function Add-Log {
 [int]$pingTopY = $y2 + 340
 
 $grpPing = New-Object System.Windows.Forms.GroupBox
-$grpPing.Text = "UE -> Server Ping"
+$grpPing.Text = "Ping : UE -> Server"
 $grpPing.Location = New-Object System.Drawing.Point($baseX, $pingTopY)
 $grpPing.Size = New-Object System.Drawing.Size(430, 220)
 $grpPing.ForeColor = $labelColor
 $form.Controls.Add($grpPing)
 
 $checkPingUE1 = New-Object System.Windows.Forms.CheckBox
-$checkPingUE1.Text = "Ping UE1 -> Server"
+$checkPingUE1.Text = "UE1 -> Server"
 $checkPingUE1.Location = New-Object System.Drawing.Point(15, 25)
 $checkPingUE1.Size = New-Object System.Drawing.Size(150, 20)
 Set-DarkCheckBoxStyle $checkPingUE1
 $grpPing.Controls.Add($checkPingUE1)
 
 $checkPingUE2 = New-Object System.Windows.Forms.CheckBox
-$checkPingUE2.Text = "Ping UE2 -> Server"
+$checkPingUE2.Text = "UE2 -> Server"
 $checkPingUE2.Location = New-Object System.Drawing.Point(220, 25)
 $checkPingUE2.Size = New-Object System.Drawing.Size(150, 20)
 Set-DarkCheckBoxStyle $checkPingUE2
