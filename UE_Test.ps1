@@ -8,6 +8,16 @@ $global:psList      = @()   # iperf3 PowerShell window PID list
 $global:PingJobUE1  = $null
 $global:PingJobUE2  = $null
 
+# ======================
+# Config file path
+# ======================
+if ($PSCommandPath) {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+} else {
+    $scriptDir = (Get-Location).Path
+}
+$global:ConfigFilePath = Join-Path $scriptDir "UE_Test_Config.json"
+
 # UE 정보 구조체: IP + Modem 정보
 $global:UE1Info = [PSCustomObject]@{
     IP        = $null
@@ -32,7 +42,7 @@ $colorUE2        = [System.Drawing.Color]::LightSkyBlue
 # ======================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
-$form.ClientSize = New-Object System.Drawing.Size(950, 700)
+$form.ClientSize = New-Object System.Drawing.Size(950, 750)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
@@ -85,7 +95,7 @@ function Set-DarkCheckBoxStyle($cb) {
 $grpDevice = New-Object System.Windows.Forms.GroupBox
 $grpDevice.Text = "Device Info"
 $grpDevice.Location = New-Object System.Drawing.Point(10, $y)
-$grpDevice.Size = New-Object System.Drawing.Size(900, 80)   # 필요하면 높이 조절
+$grpDevice.Size = New-Object System.Drawing.Size(900, 65)   # 필요하면 높이 조절
 $grpDevice.ForeColor = $labelColor
 $form.Controls.Add($grpDevice)
 
@@ -112,7 +122,7 @@ $lblDeviceUE2.BackColor = [System.Drawing.Color]::Transparent
 $grpDevice.Controls.Add($lblDeviceUE2)
 
 # 그룹박스 아래부터는 기존처럼 폼에 직접 배치
-$y = $grpDevice.Bottom + 10
+$y = $grpDevice.Bottom + 20
 
 # Swap 버튼
 $btnSwapUE = New-Object System.Windows.Forms.Button
@@ -183,6 +193,43 @@ $form.Controls.Add($checkUE2)
 
 $y += $height + $gap
 
+# ---- DL only row ----
+$checkDlOnlyUe1 = New-Object System.Windows.Forms.CheckBox
+$checkDlOnlyUe1.Text = "DL only"
+$checkDlOnlyUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$checkDlOnlyUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkDlOnlyUe1.Checked = $false
+Set-DarkCheckBoxStyle $checkDlOnlyUe1
+$form.Controls.Add($checkDlOnlyUe1)
+
+$checkDlOnlyUe2 = New-Object System.Windows.Forms.CheckBox
+$checkDlOnlyUe2.Text = "DL only"
+$checkDlOnlyUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$checkDlOnlyUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkDlOnlyUe2.Checked = $false
+Set-DarkCheckBoxStyle $checkDlOnlyUe2
+$form.Controls.Add($checkDlOnlyUe2)
+
+$y += $height + $gap
+
+# ---- UL only row ----
+$checkUlOnlyUe1 = New-Object System.Windows.Forms.CheckBox
+$checkUlOnlyUe1.Text = "UL only"
+$checkUlOnlyUe1.Location = New-Object System.Drawing.Point($inputX, $y)
+$checkUlOnlyUe1.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkUlOnlyUe1.Checked = $false
+Set-DarkCheckBoxStyle $checkUlOnlyUe1
+$form.Controls.Add($checkUlOnlyUe1)
+
+$checkUlOnlyUe2 = New-Object System.Windows.Forms.CheckBox
+$checkUlOnlyUe2.Text = "UL only"
+$checkUlOnlyUe2.Location = New-Object System.Drawing.Point($colUe2X, $y)
+$checkUlOnlyUe2.Size = New-Object System.Drawing.Size($widthInput, $height)
+$checkUlOnlyUe2.Checked = $false
+Set-DarkCheckBoxStyle $checkUlOnlyUe2
+$form.Controls.Add($checkUlOnlyUe2)
+
+$y += $height + (2 * $gap)
 
 # ---- DL Port row ----
 $labelDlPort = New-Object System.Windows.Forms.Label
@@ -206,8 +253,7 @@ $textDlPortUe2.Text = "5601"
 Set-DarkTextBoxStyle $textDlPortUe2
 $form.Controls.Add($textDlPortUe2)
 
-$y += $height + (2 * $gap)
-
+$y += $height + $gap
 # ---- UL Port row ----
 $labelUlPort = New-Object System.Windows.Forms.Label
 $labelUlPort.Text = "UL Port #"
@@ -230,7 +276,7 @@ $textUlPortUe2.Text = "5602"
 Set-DarkTextBoxStyle $textUlPortUe2
 $form.Controls.Add($textUlPortUe2)
 
-$y += $height + (2 * $gap)
+$y += $height + $gap
 
 # Download BW
 $labelDlBw = New-Object System.Windows.Forms.Label
@@ -254,7 +300,7 @@ $textDlBwUe2.Text = "1000M"
 Set-DarkTextBoxStyle $textDlBwUe2
 $form.Controls.Add($textDlBwUe2)
 
-$y += $height + (2 * $gap)
+$y += $height + $gap
 
 # Upload BW
 $labelUlBw = New-Object System.Windows.Forms.Label
@@ -278,7 +324,7 @@ $textUlBwUe2.Text = "500M"
 Set-DarkTextBoxStyle $textUlBwUe2
 $form.Controls.Add($textUlBwUe2)
 
-$y += $height + (2 * $gap)
+$y += $height + $gap
 
 # Duration
 $labelTime = New-Object System.Windows.Forms.Label
@@ -302,7 +348,7 @@ $textTimeUe2.Text = "0"
 Set-DarkTextBoxStyle $textTimeUe2
 $form.Controls.Add($textTimeUe2)
 
-$y += $height + (2 * $gap)
+$y += $height + $gap
 
 # Protocol
 $labelProto = New-Object System.Windows.Forms.Label
@@ -347,6 +393,23 @@ $buttonStop.Size = New-Object System.Drawing.Size(160, 30)
 Set-DarkButtonStyle $buttonStop
 $form.Controls.Add($buttonStop)
 
+# ---- 여기 아래에 Save / Load 버튼 추가 ----
+$y += $height + 2*$gap + 10
+
+$buttonSaveCfg = New-Object System.Windows.Forms.Button
+$buttonSaveCfg.Text = "Save Config"
+$buttonSaveCfg.Location = New-Object System.Drawing.Point(50, $y)
+$buttonSaveCfg.Size = New-Object System.Drawing.Size(160, 30)
+Set-DarkButtonStyle $buttonSaveCfg
+$form.Controls.Add($buttonSaveCfg)
+
+$buttonLoadCfg = New-Object System.Windows.Forms.Button
+$buttonLoadCfg.Text = "Load Config"
+$buttonLoadCfg.Location = New-Object System.Drawing.Point(250, $y)
+$buttonLoadCfg.Size = New-Object System.Drawing.Size(160, 30)
+Set-DarkButtonStyle $buttonLoadCfg
+$form.Controls.Add($buttonLoadCfg)
+
 $y += $height + 2*$gap + 30
 
 $buttonClose = New-Object System.Windows.Forms.Button
@@ -355,9 +418,6 @@ $buttonClose.Location = New-Object System.Drawing.Point(180, $y)
 $buttonClose.Size = New-Object System.Drawing.Size(120, 30)
 Set-DarkButtonStyle $buttonClose
 $form.Controls.Add($buttonClose)
-
-
-$y += $height + 2*$gap + 30
 
 # ======================
 # Helper: Remote NDIS IP list
@@ -587,6 +647,106 @@ function Add-PingLog {
     $txtPingLog.SelectionColor = $colorDefaultLog
     $txtPingLog.SelectionStart = $txtPingLog.TextLength
     $txtPingLog.ScrollToCaret()
+}
+
+# ======================
+# Config Save / Load
+# ======================
+function Save-Config {
+    $cfg = @{
+        ServerIp = $textServerIp.Text
+
+        UE1 = @{
+            Enable = $checkUE1.Checked
+            DlOnly = $checkDlOnlyUe1.Checked
+            UlOnly = $checkUlOnlyUe1.Checked
+
+            DlPort = $textDlPortUe1.Text
+            UlPort = $textUlPortUe1.Text
+            DlBw   = $textDlBwUe1.Text
+            UlBw   = $textUlBwUe1.Text
+            Time   = $textTimeUe1.Text
+            Proto  = $comboProtoUe1.SelectedItem
+        }
+
+        UE2 = @{
+            Enable = $checkUE2.Checked
+            DlOnly = $checkDlOnlyUe2.Checked
+            UlOnly = $checkUlOnlyUe2.Checked
+
+            DlPort = $textDlPortUe2.Text
+            UlPort = $textUlPortUe2.Text
+            DlBw   = $textDlBwUe2.Text
+            UlBw   = $textUlBwUe2.Text
+            Time   = $textTimeUe2.Text
+            Proto  = $comboProtoUe2.SelectedItem
+        }
+    }
+
+    try {
+        $json = $cfg | ConvertTo-Json -Depth 5
+        $json | Set-Content -Path $global:ConfigFilePath -Encoding UTF8
+        [System.Windows.Forms.MessageBox]::Show("Config saved:`n$($global:ConfigFilePath)", "Save Config") | Out-Null
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to save config: $($_.Exception.Message)", "Save Config Error") | Out-Null
+    }
+}
+
+function Load-Config {
+    if (-not (Test-Path $global:ConfigFilePath)) {
+        [System.Windows.Forms.MessageBox]::Show("Config file not found:`n$($global:ConfigFilePath)", "Load Config") | Out-Null
+        return
+    }
+
+    try {
+        $json = Get-Content -Path $global:ConfigFilePath -Raw -Encoding UTF8
+        $cfg  = $json | ConvertFrom-Json
+
+        # Server IP
+        if ($cfg.ServerIp) { $textServerIp.Text = $cfg.ServerIp }
+
+        # ---- UE1 ----
+        if ($cfg.UE1) {
+            $checkUE1.Checked        = [bool]$cfg.UE1.Enable
+            $checkDlOnlyUe1.Checked  = [bool]$cfg.UE1.DlOnly
+            $checkUlOnlyUe1.Checked  = [bool]$cfg.UE1.UlOnly
+
+            if ($cfg.UE1.DlPort) { $textDlPortUe1.Text = $cfg.UE1.DlPort }
+            if ($cfg.UE1.UlPort) { $textUlPortUe1.Text = $cfg.UE1.UlPort }
+            if ($cfg.UE1.DlBw)   { $textDlBwUe1.Text   = $cfg.UE1.DlBw }
+            if ($cfg.UE1.UlBw)   { $textUlBwUe1.Text   = $cfg.UE1.UlBw }
+            if ($cfg.UE1.Time)   { $textTimeUe1.Text   = $cfg.UE1.Time }
+
+            if ($cfg.UE1.Proto) {
+                if ($comboProtoUe1.Items.Contains($cfg.UE1.Proto)) {
+                    $comboProtoUe1.SelectedItem = $cfg.UE1.Proto
+                }
+            }
+        }
+
+        # ---- UE2 ----
+        if ($cfg.UE2) {
+            $checkUE2.Checked        = [bool]$cfg.UE2.Enable
+            $checkDlOnlyUe2.Checked  = [bool]$cfg.UE2.DlOnly
+            $checkUlOnlyUe2.Checked  = [bool]$cfg.UE2.UlOnly
+
+            if ($cfg.UE2.DlPort) { $textDlPortUe2.Text = $cfg.UE2.DlPort }
+            if ($cfg.UE2.UlPort) { $textUlPortUe2.Text = $cfg.UE2.UlPort }
+            if ($cfg.UE2.DlBw)   { $textDlBwUe2.Text   = $cfg.UE2.DlBw }
+            if ($cfg.UE2.UlBw)   { $textUlBwUe2.Text   = $cfg.UE2.UlBw }
+            if ($cfg.UE2.Time)   { $textTimeUe2.Text   = $cfg.UE2.Time }
+
+            if ($cfg.UE2.Proto) {
+                if ($comboProtoUe2.Items.Contains($cfg.UE2.Proto)) {
+                    $comboProtoUe2.SelectedItem = $cfg.UE2.Proto
+                }
+            }
+        }
+
+        [System.Windows.Forms.MessageBox]::Show("Config loaded.`n$($global:ConfigFilePath)", "Load Config") | Out-Null
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to load config: $($_.Exception.Message)", "Load Config Error") | Out-Null
+    }
 }
 
 # ======================
@@ -889,15 +1049,15 @@ $buttonStart.Add_Click({
     $ul2p = $textUlPortUe2.Text.Trim()
 
     # UE1 설정 값
-    $dlBw1 = $textDlBwUe1.Text.Trim()
-    $ulBw1 = $textUlBwUe1.Text.Trim()
-    $t1    = $textTimeUe1.Text.Trim()
+    $dlBw1  = $textDlBwUe1.Text.Trim()
+    $ulBw1  = $textUlBwUe1.Text.Trim()
+    $t1     = $textTimeUe1.Text.Trim()
     $proto1 = $comboProtoUe1.SelectedItem
 
     # UE2 설정 값
-    $dlBw2 = $textDlBwUe2.Text.Trim()
-    $ulBw2 = $textUlBwUe2.Text.Trim()
-    $t2    = $textTimeUe2.Text.Trim()
+    $dlBw2  = $textDlBwUe2.Text.Trim()
+    $ulBw2  = $textUlBwUe2.Text.Trim()
+    $t2     = $textTimeUe2.Text.Trim()
     $proto2 = $comboProtoUe2.SelectedItem
 
     $useUE1 = $checkUE1.Checked
@@ -925,11 +1085,30 @@ $buttonStart.Add_Click({
         $bind1 = $global:UE1Info.IP
         $udp1  = if ($proto1 -eq "UDP") { "-u" } else { "" }
 
-        if ($bind1 -and $dl1p -and $ul1p -and $dlBw1 -and $ulBw1 -and $t1) {
-            $DL1 = "iperf3.exe -c $server -p $dl1p $udp1 -b $dlBw1 -t $t1 -R --bind $bind1"
-            $UL1 = "iperf3.exe -c $server -p $ul1p $udp1 -b $ulBw1 -t $t1 --bind $bind1"
-            Start-TestWindow $DL1
-            Start-TestWindow $UL1
+        # DL only / UL only 상태
+        $dlOnly1 = $checkDlOnlyUe1.Checked
+        $ulOnly1 = $checkUlOnlyUe1.Checked
+
+        # 기본값: 둘 다 실행
+        $runDL1 = $true
+        $runUL1 = $true
+
+        if ($dlOnly1 -and -not $ulOnly1) {
+            $runUL1 = $false     # DL만
+        } elseif ($ulOnly1 -and -not $dlOnly1) {
+            $runDL1 = $false     # UL만
+        }
+        # 둘 다 체크 or 둘 다 미체크 → 둘 다 실행
+
+        if ($bind1 -and $dl1p -and $dlBw1 -and $ul1p -and $ulBw1 -and $t1) {
+            if ($runDL1) {
+                $DL1 = "iperf3.exe -c $server -p $dl1p $udp1 -b $dlBw1 -t $t1 -R --bind $bind1"
+                Start-TestWindow $DL1
+            }
+            if ($runUL1) {
+                $UL1 = "iperf3.exe -c $server -p $ul1p $udp1 -b $ulBw1 -t $t1 --bind $bind1"
+                Start-TestWindow $UL1
+            }
         } else {
             [System.Windows.Forms.MessageBox]::Show("UE1 fields or IP (Device Info) are incomplete.", "Input Error (UE1)") | Out-Null
         }
@@ -940,19 +1119,37 @@ $buttonStart.Add_Click({
         $bind2 = $global:UE2Info.IP
         $udp2  = if ($proto2 -eq "UDP") { "-u" } else { "" }
 
-        if ($bind2 -and $dl2p -and $ul2p -and $dlBw2 -and $ulBw2 -and $t2) {
-            $DL2 = "iperf3.exe -c $server -p $dl2p $udp2 -b $dlBw2 -t $t2 -R --bind $bind2"
-            $UL2 = "iperf3.exe -c $server -p $ul2p $udp2 -b $ulBw2 -t $t2 --bind $bind2"
-            Start-TestWindow $DL2
-            Start-TestWindow $UL2
+        # DL only / UL only 상태
+        $dlOnly2 = $checkDlOnlyUe2.Checked
+        $ulOnly2 = $checkUlOnlyUe2.Checked
+
+        $runDL2 = $true
+        $runUL2 = $true
+
+        if ($dlOnly2 -and -not $ulOnly2) {
+            $runUL2 = $false
+        } elseif ($ulOnly2 -and -not $dlOnly2) {
+            $runDL2 = $false
+        }
+
+        if ($bind2 -and $dl2p -and $dlBw2 -and $ul2p -and $ulBw2 -and $t2) {
+            if ($runDL2) {
+                $DL2 = "iperf3.exe -c $server -p $dl2p $udp2 -b $dlBw2 -t $t2 -R --bind $bind2"
+                Start-TestWindow $DL2
+            }
+            if ($runUL2) {
+                $UL2 = "iperf3.exe -c $server -p $ul2p $udp2 -b $ulBw2 -t $t2 --bind $bind2"
+                Start-TestWindow $UL2
+            }
         } else {
             [System.Windows.Forms.MessageBox]::Show("UE2 fields or IP (Device Info) are incomplete.", "Input Error (UE2)") | Out-Null
         }
     }
 
     [System.Windows.Forms.MessageBox]::Show("Selected UE sessions have been started.", "iperf3") | Out-Null
-})
+})   # ← Start 버튼 핸들러 끝!
 
+# Stop 버튼
 $buttonStop.Add_Click({
     try {
         $iperf = Get-Process iperf3 -ErrorAction SilentlyContinue
@@ -969,6 +1166,14 @@ $buttonStop.Add_Click({
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Error while stopping sessions: $($_.Exception.Message)", "Error") | Out-Null
     }
+})
+
+$buttonSaveCfg.Add_Click({
+    Save-Config
+})
+
+$buttonLoadCfg.Add_Click({
+    Load-Config
 })
 
 # Add Routing (자동: UE1/UE2 IP 사용)
