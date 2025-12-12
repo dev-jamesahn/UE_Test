@@ -547,29 +547,38 @@ $btnSend.Size = New-Object System.Drawing.Size(60, 26)
 Set-DarkButtonStyle $btnSend
 $grpAt.Controls.Add($btnSend)
 
+# --- 여기: CFUN / Reboot 버튼 3개를 한 줄로 배치 ---
 $btnCFUN0 = New-Object System.Windows.Forms.Button
 $btnCFUN0.Text = "CFUN=0"
-$btnCFUN0.Location = New-Object System.Drawing.Point(325, 73)
+$btnCFUN0.Location = New-Object System.Drawing.Point(15, 105)
 $btnCFUN0.Size = New-Object System.Drawing.Size(80, 26)
 Set-DarkButtonStyle $btnCFUN0
 $grpAt.Controls.Add($btnCFUN0)
 
 $btnCFUN1 = New-Object System.Windows.Forms.Button
 $btnCFUN1.Text = "CFUN=1"
-$btnCFUN1.Location = New-Object System.Drawing.Point(325, 105)
+$btnCFUN1.Location = New-Object System.Drawing.Point(105, 105)
 $btnCFUN1.Size = New-Object System.Drawing.Size(80, 26)
 Set-DarkButtonStyle $btnCFUN1
 $grpAt.Controls.Add($btnCFUN1)
 
+$btnReboot = New-Object System.Windows.Forms.Button
+$btnReboot.Text = "Reboot"
+$btnReboot.Location = New-Object System.Drawing.Point(195, 105)
+$btnReboot.Size = New-Object System.Drawing.Size(80, 26)
+Set-DarkButtonStyle $btnReboot
+$grpAt.Controls.Add($btnReboot)
+
+# Log 라벨/창은 아래쪽으로 조금 내림
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text = "Log:"
 $lblLog.AutoSize = $true
-$lblLog.Location = New-Object System.Drawing.Point(15, 110)
+$lblLog.Location = New-Object System.Drawing.Point(15, 140)
 $grpAt.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.RichTextBox
-$txtLog.Location = New-Object System.Drawing.Point(15, 140)
-$txtLog.Size = New-Object System.Drawing.Size(390, 160)
+$txtLog.Location = New-Object System.Drawing.Point(15, 160)
+$txtLog.Size = New-Object System.Drawing.Size(390, 140)
 $txtLog.ReadOnly = $true
 $txtLog.ScrollBars = "Vertical"
 $txtLog.BackColor = $textBgColor
@@ -653,6 +662,10 @@ function Add-PingLog {
 # Config Save / Load
 # ======================
 function Save-Config {
+    param(
+        [string]$Path = $global:ConfigFilePath
+    )
+
     $cfg = @{
         ServerIp = $textServerIp.Text
 
@@ -685,21 +698,25 @@ function Save-Config {
 
     try {
         $json = $cfg | ConvertTo-Json -Depth 5
-        $json | Set-Content -Path $global:ConfigFilePath -Encoding UTF8
-        [System.Windows.Forms.MessageBox]::Show("Config saved:`n$($global:ConfigFilePath)", "Save Config") | Out-Null
+        $json | Set-Content -Path $Path -Encoding UTF8
+        [System.Windows.Forms.MessageBox]::Show("Config saved:`n$Path", "Save Config") | Out-Null
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Failed to save config: $($_.Exception.Message)", "Save Config Error") | Out-Null
     }
 }
 
 function Load-Config {
-    if (-not (Test-Path $global:ConfigFilePath)) {
-        [System.Windows.Forms.MessageBox]::Show("Config file not found:`n$($global:ConfigFilePath)", "Load Config") | Out-Null
+    param(
+        [string]$Path = $global:ConfigFilePath
+    )
+
+    if (-not (Test-Path $Path)) {
+        [System.Windows.Forms.MessageBox]::Show("Config file not found:`n$Path", "Load Config") | Out-Null
         return
     }
 
     try {
-        $json = Get-Content -Path $global:ConfigFilePath -Raw -Encoding UTF8
+        $json = Get-Content -Path $Path -Raw -Encoding UTF8
         $cfg  = $json | ConvertFrom-Json
 
         # Server IP
@@ -743,7 +760,7 @@ function Load-Config {
             }
         }
 
-        [System.Windows.Forms.MessageBox]::Show("Config loaded.`n$($global:ConfigFilePath)", "Load Config") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Config loaded.`n$Path", "Load Config") | Out-Null
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Failed to load config: $($_.Exception.Message)", "Load Config Error") | Out-Null
     }
@@ -912,6 +929,11 @@ $btnCFUN0.Add_Click({
 $btnCFUN1.Add_Click({
     if ($checkAtUE1.Checked) { Send-AT-ToUE "AT+CFUN=1" "UE1" $colorUE1 }
     if ($checkAtUE2.Checked) { Send-AT-ToUE "AT+CFUN=1" "UE2" $colorUE2 }
+})
+
+$btnReboot.Add_Click({
+    if ($checkAtUE1.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE1" $colorUE1 }
+    if ($checkAtUE2.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE2" $colorUE2 }
 })
 
 # ======================
@@ -1083,7 +1105,7 @@ $buttonStart.Add_Click({
     # ---------- UE1 ----------
     if ($useUE1) {
         $bind1 = $global:UE1Info.IP
-        $udp1  = if ($proto1 -eq "UDP") { "-u" } else { "" }
+        $udp1  = if ($proto1 -eq "UDP") { "-u" } else { "-P 5" }
 
         # DL only / UL only 상태
         $dlOnly1 = $checkDlOnlyUe1.Checked
@@ -1117,7 +1139,7 @@ $buttonStart.Add_Click({
     # ---------- UE2 ----------
     if ($useUE2) {
         $bind2 = $global:UE2Info.IP
-        $udp2  = if ($proto2 -eq "UDP") { "-u" } else { "" }
+        $udp2  = if ($proto2 -eq "UDP") { "-u" } else { "-P 5" }
 
         # DL only / UL only 상태
         $dlOnly2 = $checkDlOnlyUe2.Checked
@@ -1169,11 +1191,34 @@ $buttonStop.Add_Click({
 })
 
 $buttonSaveCfg.Add_Click({
-    Save-Config
+    $dlg = New-Object System.Windows.Forms.SaveFileDialog
+    $dlg.InitialDirectory = $scriptDir
+    $dlg.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+    $dlg.FileName = "UE_Test_Config.json"
+
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Save-Config -Path $dlg.FileName
+        $global:ConfigFilePath = $dlg.FileName   # 이후 기본 경로를 방금 저장한 파일로 갱신
+    }
 })
 
 $buttonLoadCfg.Add_Click({
-    Load-Config
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+
+    if (Test-Path $global:ConfigFilePath) {
+        $dlg.InitialDirectory = Split-Path $global:ConfigFilePath -Parent
+        $dlg.FileName = (Split-Path $global:ConfigFilePath -Leaf)
+    } else {
+        $dlg.InitialDirectory = $scriptDir
+        $dlg.FileName = "UE_Test_Config.json"
+    }
+
+    $dlg.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Load-Config -Path $dlg.FileName
+        $global:ConfigFilePath = $dlg.FileName   # 이후 자동 로드용 기본 파일도 이걸로
+    }
 })
 
 # Add Routing (자동: UE1/UE2 IP 사용)
@@ -1236,10 +1281,14 @@ $buttonRouteDelete.Add_Click({
 })
 
 # ======================
-# Form Shown: 초기 디바이스 매핑
+# Form Shown: 초기 디바이스 매핑 + 설정 자동 로드
 # ======================
 $form.Add_Shown({
     Detect-AndMapDevices
+
+    if (Test-Path $global:ConfigFilePath) {
+        Load-Config -Path $global:ConfigFilePath
+    }
 })
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
