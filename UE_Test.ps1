@@ -7,6 +7,8 @@ Add-Type -AssemblyName System.Drawing
 $global:psList      = @()   # iperf3 PowerShell window PID list
 $global:PingJobUE1  = $null
 $global:PingJobUE2  = $null
+$global:RebootTimer      = $null
+$global:RebootDetectTry  = 0
 
 # ======================
 # Config file path
@@ -792,24 +794,59 @@ function Update-DeviceInfoLabels {
 }
 
 function Detect-AndMapDevices {
+
+    # 기존 UE IP 기억
+    $oldUE1IP = $global:UE1Info.IP
+    $oldUE2IP = $global:UE2Info.IP
+
+    # 현재 상태 읽기
     $ips    = Get-NdisIpList
     $modems = Get-ModemPorts
 
-    # 초기화
-    $global:UE1Info.IP        = $null
+    $newUE1IP = $null
+    $newUE2IP = $null
+
+    # ===== 1) IP 매핑 =====
+
+    if ($ips.Count -eq 1) {
+        # ★ IP 가 1개만 있으면 무조건 UE1 로 본다
+        $newUE1IP = $ips[0]
+        $newUE2IP = $null
+    }
+    else {
+        # IP 가 0개 또는 2개 이상일 때는
+        #   - 이전 IP 가 살아있으면 같은 UE 에 유지
+        #   - 남은 IP 는 빈 슬롯에 순서대로 할당
+
+        $ipList = @()
+        $ipList += $ips
+
+        if ($oldUE1IP -and ($ipList -contains $oldUE1IP)) {
+            $newUE1IP = $oldUE1IP
+            $ipList   = $ipList | Where-Object { $_ -ne $oldUE1IP }
+        }
+        if ($oldUE2IP -and ($ipList -contains $oldUE2IP)) {
+            $newUE2IP = $oldUE2IP
+            $ipList   = $ipList | Where-Object { $_ -ne $oldUE2IP }
+        }
+
+        foreach ($ip in $ipList) {
+            if (-not $newUE1IP) { $newUE1IP = $ip; continue }
+            if (-not $newUE2IP) { $newUE2IP = $ip; continue }
+        }
+    }
+
+    $global:UE1Info.IP = $newUE1IP
+    $global:UE2Info.IP = $newUE2IP
+
+    # ===== 2) 모뎀(COM 포트) 매핑 (기존 규칙 유지) =====
     $global:UE1Info.ModemName = $null
     $global:UE1Info.ComPort   = $null
-    $global:UE2Info.IP        = $null
     $global:UE2Info.ModemName = $null
     $global:UE2Info.ComPort   = $null
 
-    # 기본적으로 IP 순서는 그대로 사용
-    if ($ips.Count -ge 1) { $global:UE1Info.IP = $ips[0] }
-    if ($ips.Count -ge 2) { $global:UE2Info.IP = $ips[1] }
-
-    # --- 여기에서 모뎀 순서를 교환해서 매핑 ---
-    if ($ips.Count -eq 2 -and $modems.Count -eq 2) {
-        # UE1 IP -> 두 번째 모뎀, UE2 IP -> 첫 번째 모뎀
+    if ($modems.Count -eq 2) {
+        # 2대일 때는 교차 매핑
         $global:UE1Info.ModemName = $modems[1].Name
         $global:UE1Info.ComPort   = $modems[1].AttachedTo
 
@@ -817,7 +854,6 @@ function Detect-AndMapDevices {
         $global:UE2Info.ComPort   = $modems[0].AttachedTo
     }
     else {
-        # 2대가 아닌 경우는 기존 방식 유지
         if ($modems.Count -ge 1) {
             $global:UE1Info.ModemName = $modems[0].Name
             $global:UE1Info.ComPort   = $modems[0].AttachedTo
@@ -829,7 +865,53 @@ function Detect-AndMapDevices {
     }
 
     Update-DeviceInfoLabels
-    Add-Log "Detected $($modems.Count) modem port(s)." $colorDefaultLog
+
+    # 디버깅용 로그
+    $ipListStr    = if ($ips.Count)    { $ips -join ", " }             else { "(none)" }
+    $modemPortStr = if ($modems.Count) { $modems.AttachedTo -join ", " } else { "(none)" }
+
+    Add-Log "Detected NDIS IP(s): $ipListStr  /  Modem port(s): $modemPortStr" $colorDefaultLog
+}
+
+function Start-RebootDetect {
+    # 이전 타이머 있으면 정리
+    if ($global:RebootTimer) {
+        try {
+            $global:RebootTimer.Stop()
+            $global:RebootTimer.Dispose()
+        } catch {}
+        $global:RebootTimer = $null
+    }
+
+    $global:RebootDetectTry = 0
+    $global:RebootTimer = New-Object System.Windows.Forms.Timer
+    $global:RebootTimer.Interval = 3000  # 3초마다 재시도 (원하면 2000/5000 등으로 조절)
+
+    $global:RebootTimer.Add_Tick({
+        $global:RebootDetectTry++
+
+        Detect-AndMapDevices
+
+        # 최소 한 개 UE라도 COM 포트가 잡히면 성공으로 간주
+        if ($global:UE1Info.ComPort -or $global:UE2Info.ComPort) {
+            Add-Log "Reboot completed. Device info re-detected (try $($global:RebootDetectTry))." $colorDefaultLog
+            $global:RebootTimer.Stop()
+            $global:RebootTimer.Dispose()
+            $global:RebootTimer = $null
+        }
+        elseif ($global:RebootDetectTry -ge 10) {
+            # 총 10번(=30초) 시도 후 포기
+            Add-Log "Reboot detect timeout. Please check USB/NDIS and try manual Detect again." $colorDefaultLog
+            $global:RebootTimer.Stop()
+            $global:RebootTimer.Dispose()
+            $global:RebootTimer = $null
+        }
+        else {
+            Add-Log "Waiting UE device to re-enumerate... (try $($global:RebootDetectTry))" $colorDefaultLog
+        }
+    })
+
+    $global:RebootTimer.Start()
 }
 
 # Swap UE1 <-> UE2
@@ -867,17 +949,36 @@ function Send-AT-ToUE {
     $send = $cmd + "`r`n"
     $portName = $info.ComPort
 
+    # 🔹 Reboot 직후 포트가 다시 살아날 때까지 기다리는 로직
+    $maxWaitMs = 10000          # 최대 10초 대기 (필요시 15000~20000으로 조정 가능)
+    $swWait = [System.Diagnostics.Stopwatch]::StartNew()
+    $portOpened = $false
+    $sp = $null
+
+    while (-not $portOpened -and $swWait.ElapsedMilliseconds -lt $maxWaitMs) {
+        try {
+            $sp = New-Object System.IO.Ports.SerialPort $portName, 115200, "None", 8, "One"
+            $sp.Handshake   = "None"
+            $sp.ReadTimeout = 1000
+            $sp.WriteTimeout= 1000
+            $sp.DtrEnable   = $true
+            $sp.RtsEnable   = $true
+            $sp.NewLine     = "`r`n"
+
+            $sp.Open()
+            $portOpened = $true
+        } catch {
+            # 아직 포트가 사용 중 / 재생성 중이면 조금 기다렸다가 재시도
+            Start-Sleep -Milliseconds 300
+        }
+    }
+
+    if (-not $portOpened) {
+        Add-Log "[$UE] Error: COM port $portName is not available (timeout / in use)." $Color
+        return
+    }
+
     try {
-        $sp = New-Object System.IO.Ports.SerialPort $portName, 115200, "None", 8, "One"
-        $sp.Handshake   = "None"
-        $sp.ReadTimeout = 1000
-        $sp.WriteTimeout= 1000
-        $sp.DtrEnable   = $true
-        $sp.RtsEnable   = $true
-        $sp.NewLine     = "`r`n"
-
-        $sp.Open()
-
         Add-Log "[$UE] TX $($portName): $cmd" $Color
 
         $sp.DiscardInBuffer()
@@ -907,13 +1008,14 @@ function Send-AT-ToUE {
         } else {
             Add-Log "[$UE] RX $($portName): (no data)" $Color
         }
-
-        $sp.Close()
     } catch {
         Add-Log "[$UE] Error on $($portName): $($_.Exception.Message)" $Color
+    } finally {
+        if ($sp -and $sp.IsOpen) {
+            $sp.Close()
+        }
     }
 }
-
 
 $btnSend.Add_Click({
     $cmd = $txtCmd.Text
@@ -932,8 +1034,14 @@ $btnCFUN1.Add_Click({
 })
 
 $btnReboot.Add_Click({
+    # 1) 선택된 UE 들에 Reboot AT 전송
     if ($checkAtUE1.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE1" $colorUE1 }
     if ($checkAtUE2.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE2" $colorUE2 }
+
+    Add-Log "Reboot command sent. Waiting for UE(s) to come back..." $colorDefaultLog
+
+    # 2) Reboot 후 주기적으로 Device Info 재검출
+    Start-RebootDetect
 })
 
 # ======================
