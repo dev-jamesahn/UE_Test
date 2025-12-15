@@ -9,6 +9,7 @@ $global:PingJobUE1  = $null
 $global:PingJobUE2  = $null
 $global:RebootTimer      = $null
 $global:RebootDetectTry  = 0
+$global:PingTickBusy = $false
 
 # ======================
 # Config file path
@@ -44,7 +45,7 @@ $colorUE2        = [System.Drawing.Color]::LightSkyBlue
 # ======================
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "my5G UE Test Tool"
-$form.ClientSize = New-Object System.Drawing.Size(950, 750)
+$form.ClientSize = New-Object System.Drawing.Size(1000, 720)
 $form.StartPosition = "CenterScreen"
 $form.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
 $form.ForeColor = [System.Drawing.Color]::White
@@ -97,7 +98,7 @@ function Set-DarkCheckBoxStyle($cb) {
 $grpDevice = New-Object System.Windows.Forms.GroupBox
 $grpDevice.Text = "Device Info"
 $grpDevice.Location = New-Object System.Drawing.Point(10, $y)
-$grpDevice.Size = New-Object System.Drawing.Size(900, 65)   # 필요하면 높이 조절
+$grpDevice.Size = New-Object System.Drawing.Size(970, 65)   # 필요하면 높이 조절
 $grpDevice.ForeColor = $labelColor
 $form.Controls.Add($grpDevice)
 
@@ -505,7 +506,7 @@ function Get-RouteInfoForIp {
 $grpAt = New-Object System.Windows.Forms.GroupBox
 $grpAt.Text = "AT Command"
 $grpAt.Location = New-Object System.Drawing.Point($baseX, $y2)
-$grpAt.Size = New-Object System.Drawing.Size(430, 320)
+$grpAt.Size = New-Object System.Drawing.Size(500, 320)
 $grpAt.ForeColor = $labelColor
 $form.Controls.Add($grpAt)
 
@@ -580,7 +581,7 @@ $grpAt.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.RichTextBox
 $txtLog.Location = New-Object System.Drawing.Point(15, 160)
-$txtLog.Size = New-Object System.Drawing.Size(390, 140)
+$txtLog.Size = New-Object System.Drawing.Size(450, 140)
 $txtLog.ReadOnly = $true
 $txtLog.ScrollBars = "Vertical"
 $txtLog.BackColor = $textBgColor
@@ -602,6 +603,8 @@ function Add-Log {
     $txtLog.SelectionColor = $colorDefaultLog
     $txtLog.SelectionStart = $txtLog.TextLength
     $txtLog.ScrollToCaret()
+
+    Trim-RichTextBox -Box $txtLog
 }
 
 # UE -> Server Ping Group
@@ -610,7 +613,7 @@ function Add-Log {
 $grpPing = New-Object System.Windows.Forms.GroupBox
 $grpPing.Text = "Ping : UE -> Server"
 $grpPing.Location = New-Object System.Drawing.Point($baseX, $pingTopY)
-$grpPing.Size = New-Object System.Drawing.Size(430, 220)
+$grpPing.Size = New-Object System.Drawing.Size(500, 220)
 $grpPing.ForeColor = $labelColor
 $form.Controls.Add($grpPing)
 
@@ -636,7 +639,7 @@ $grpPing.Controls.Add($lblPingLog)
 
 $txtPingLog = New-Object System.Windows.Forms.RichTextBox
 $txtPingLog.Location = New-Object System.Drawing.Point(15, 70)
-$txtPingLog.Size = New-Object System.Drawing.Size(390, 130)
+$txtPingLog.Size = New-Object System.Drawing.Size(450, 130)
 $txtPingLog.ReadOnly = $true
 $txtPingLog.ScrollBars = "Vertical"
 $txtPingLog.BackColor = $textBgColor
@@ -648,8 +651,13 @@ function Add-PingLog {
         [string]$Message,
         [System.Drawing.Color]$Color = $colorDefaultLog
     )
+
     $time = Get-Date -Format "HH:mm:ss"
-    $line = "$time  $Message`r`n"
+
+    # 🔸 여기 핵심: Message 끝에 붙어있는 CR/LF 제거
+    $msg = ($Message -replace "(\r?\n)+$","")
+
+    $line = "$time  $msg`r`n"
 
     $txtPingLog.SelectionStart = $txtPingLog.TextLength
     $txtPingLog.SelectionLength = 0
@@ -658,6 +666,23 @@ function Add-PingLog {
     $txtPingLog.SelectionColor = $colorDefaultLog
     $txtPingLog.SelectionStart = $txtPingLog.TextLength
     $txtPingLog.ScrollToCaret()
+
+    Trim-RichTextBox -Box $txtPingLog
+}
+
+function Trim-RichTextBox {
+    param(
+        [System.Windows.Forms.RichTextBox]$Box,
+        [int]$MaxChars = 200000   # 필요 시 조절
+    )
+    if ($Box.TextLength -le $MaxChars) { return }
+
+    # 앞부분을 잘라냄 (여유분 80%로 유지)
+    $remove = $Box.TextLength - [int]($MaxChars * 0.8)
+    if ($remove -gt 0) {
+        $Box.Select(0, $remove)
+        $Box.SelectedText = ""
+    }
 }
 
 # ======================
@@ -923,9 +948,6 @@ $btnSwapUE.Add_Click({
     Add-Log "Swapped UE1 and UE2 mapping." $colorDefaultLog
 })
 
-# ======================
-# AT Command Send
-# ======================
 function Send-AT-ToUE {
     param(
         [string]$Command,
@@ -949,8 +971,7 @@ function Send-AT-ToUE {
     $send = $cmd + "`r`n"
     $portName = $info.ComPort
 
-    # 🔹 Reboot 직후 포트가 다시 살아날 때까지 기다리는 로직
-    $maxWaitMs = 10000          # 최대 10초 대기 (필요시 15000~20000으로 조정 가능)
+    $maxWaitMs = 10000
     $swWait = [System.Diagnostics.Stopwatch]::StartNew()
     $portOpened = $false
     $sp = $null
@@ -958,17 +979,16 @@ function Send-AT-ToUE {
     while (-not $portOpened -and $swWait.ElapsedMilliseconds -lt $maxWaitMs) {
         try {
             $sp = New-Object System.IO.Ports.SerialPort $portName, 115200, "None", 8, "One"
-            $sp.Handshake   = "None"
-            $sp.ReadTimeout = 1000
-            $sp.WriteTimeout= 1000
-            $sp.DtrEnable   = $true
-            $sp.RtsEnable   = $true
-            $sp.NewLine     = "`r`n"
+            $sp.Handshake    = "None"
+            $sp.ReadTimeout  = 1000
+            $sp.WriteTimeout = 1000
+            $sp.DtrEnable    = $true
+            $sp.RtsEnable    = $true
+            $sp.NewLine      = "`r`n"
 
             $sp.Open()
             $portOpened = $true
         } catch {
-            # 아직 포트가 사용 중 / 재생성 중이면 조금 기다렸다가 재시도
             Start-Sleep -Milliseconds 300
         }
     }
@@ -999,10 +1019,11 @@ function Send-AT-ToUE {
 
         $resp = $builder.ToString()
         if ($resp) {
-            $respLines = $resp -replace "`r`n","`n" -split "`n"
+            $respLines = $resp -split "`r?`n"
             foreach ($line in $respLines) {
-                if ($line.Trim() -ne "") {
-                    Add-Log "[$UE] RX $($portName): $line" $Color
+                $clean = $line.Trim()
+                if ($clean -ne "") {
+                    Add-Log "[$UE] RX $($portName): $clean" $Color
                 }
             }
         } else {
@@ -1011,11 +1032,13 @@ function Send-AT-ToUE {
     } catch {
         Add-Log "[$UE] Error on $($portName): $($_.Exception.Message)" $Color
     } finally {
-        if ($sp -and $sp.IsOpen) {
-            $sp.Close()
+        if ($sp) {
+            try { if ($sp.IsOpen) { $sp.Close() } } catch {}
+            try { $sp.Dispose() } catch {}
         }
     }
 }
+
 
 $btnSend.Add_Click({
     $cmd = $txtCmd.Text
@@ -1125,37 +1148,59 @@ $checkPingUE2.Add_CheckedChanged({
 $pingTimer = New-Object System.Windows.Forms.Timer
 $pingTimer.Interval = 1000
 $pingTimer.Add_Tick({
-    if ($global:PingJobUE1) {
-        try {
-            $out1 = Receive-Job -Job $global:PingJobUE1 -ErrorAction SilentlyContinue
-            if ($out1) {
-                foreach ($line in $out1) {
-                    if ($line -and $line.Trim() -ne "") {
-                        Add-PingLog "[UE1] $line" $colorUE1
+    if ($global:PingTickBusy) { return }
+    $global:PingTickBusy = $true
+    try {
+        # --- 여기부터 기존 코드 그대로 ---
+        if ($global:PingJobUE1) {
+            try {
+                $out1 = Receive-Job -Job $global:PingJobUE1 -ErrorAction SilentlyContinue
+                if ($out1) {
+                    $sb = New-Object System.Text.StringBuilder
+                    foreach ($line in $out1) {
+                        if ($line -and $line.Trim() -ne "") {
+                            $clean = $line.TrimEnd()
+                            [void]$sb.Append("[UE1] $clean")
+                        }
                     }
+                    $text = $sb.ToString()
+                    if ($text.Length -gt 0) { Add-PingLog $text $colorUE1 }
                 }
-            }
-        } catch {}
+            } catch {}
+        }
+
+        if ($global:PingJobUE2) {
+            try {
+                $out2 = Receive-Job -Job $global:PingJobUE2 -ErrorAction SilentlyContinue
+                if ($out2) {
+                    $sb = New-Object System.Text.StringBuilder
+                    foreach ($line in $out2) {
+                        if ($line -and $line.Trim() -ne "") {
+                            $clean = $line.TrimEnd()
+                            [void]$sb.Append("[UE2] $clean")
+                        }
+                    }
+                    $text = $sb.ToString()
+                    if ($text.Length -gt 0) { Add-PingLog $text $colorUE2 }
+                }
+            } catch {}
+        }
+        # --- 여기까지 기존 코드 그대로 ---
     }
-    if ($global:PingJobUE2) {
-        try {
-            $out2 = Receive-Job -Job $global:PingJobUE2 -ErrorAction SilentlyContinue
-            if ($out2) {
-                foreach ($line in $out2) {
-                    if ($line -and $line.Trim() -ne "") {
-                        Add-PingLog "[UE2] $line" $colorUE2
-                    }
-                }
-            }
-        } catch {}
+    finally {
+        $global:PingTickBusy = $false
     }
 })
+
 $pingTimer.Start()
 
 # ======================
 # iPerf / Route Events
 # ======================
 $buttonClose.Add_Click({
+    
+    try { $pingTimer.Stop(); $pingTimer.Dispose() } catch {}
+    
     if ($global:PingJobUE1) {
         try { Stop-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
         try { Remove-Job -Job $global:PingJobUE1 -Force -ErrorAction SilentlyContinue } catch {}
