@@ -10,6 +10,12 @@ $global:PingJobUE2  = $null
 $global:RebootTimer      = $null
 $global:RebootDetectTry  = 0
 $global:PingTickBusy = $false
+$global:UE1Key = $null
+$global:UE2Key = $null
+$global:LastUEFingerprint = @{
+    UE1 = $null
+    UE2 = $null
+}
 
 # ======================
 # Config file path
@@ -439,7 +445,8 @@ function Get-NdisIpList {
         foreach ($cfg in $cfgs) {
             $ad = $adapterByIndex[$cfg.Index]
             if (-not $ad) { continue }
-            if ($ad.Description -notlike "*Remote NDIS Compatible Device*") { continue }
+            $desc = ($ad.Description + " " + $ad.Name)
+            if ($desc -notmatch "RNDIS|Remote NDIS|USB.*Ethernet|NDIS") { continue }
 
             $ipv4s = $cfg.IPAddress | Where-Object {
                 $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -notlike "169.254.*"
@@ -452,18 +459,139 @@ function Get-NdisIpList {
     return $ips
 }
 
+function Reset-UEMapping {
+    param(
+        [bool]$ResetKeys = $true,
+        [bool]$ResetInfo = $true
+    )
+
+    if ($ResetKeys) {
+        $global:UE1Key = $null
+        $global:UE2Key = $null
+    }
+
+    if ($ResetInfo) {
+        $global:UE1Info.IP        = $null
+        $global:UE1Info.ModemName = $null
+        $global:UE1Info.ComPort   = $null
+
+        $global:UE2Info.IP        = $null
+        $global:UE2Info.ModemName = $null
+        $global:UE2Info.ComPort   = $null
+    }
+
+    # 화면 즉시 반영
+    Update-DeviceInfoLabels
+}
+
 # ======================
 # Helper: Modem list
 # ======================
 function Get-ModemPorts {
+
+    $list = @()
+
+    # 1) 가장 먼저 POTSModem 시도 (모뎀 클래스가 잘 잡히는 환경)
     try {
-        $modems = Get-CimInstance Win32_POTSModem -ErrorAction Stop
+        $pots = Get-CimInstance Win32_POTSModem -ErrorAction Stop |
+                Where-Object { $_.AttachedTo -match "^COM\d+" }
+        foreach ($m in $pots) {
+            $list += [PSCustomObject]@{
+                Name        = $m.Name
+                AttachedTo  = $m.AttachedTo
+                PnpDeviceID = $m.PNPDeviceID
+            }
+        }
+        if ($list.Count -gt 0) { return $list }
+    } catch {}
+
+    # 2) PnPEntity에서 "(COMx)"로 강제 스캔 (초기/재열거에도 가장 잘 잡힘)
+    try {
+        $ents = Get-CimInstance Win32_PnPEntity -ErrorAction Stop |
+                Where-Object { $_.Name -match "\((COM\d+)\)" }
     } catch {
-        $modems = Get-WmiObject Win32_POTSModem -ErrorAction SilentlyContinue
+        $ents = Get-WmiObject Win32_PnPEntity -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "\((COM\d+)\)" }
     }
-    if (-not $modems) { return @() }
-    $modems = $modems | Where-Object { $_.AttachedTo -match "^COM\d+" }
-    return $modems
+
+    foreach ($e in $ents) {
+        $m = [regex]::Match($e.Name, "\((COM\d+)\)")
+        if (-not $m.Success) { continue }
+
+        $com = $m.Groups[1].Value
+
+        $list += [PSCustomObject]@{
+            Name        = $e.Name
+            AttachedTo  = $com
+            PnpDeviceID = $e.PNPDeviceID
+        }
+    }
+
+    # (선택) 이름에 Qualcomm/Modem/AT 들어간 것 우선 정렬
+    $list = $list | Sort-Object @{
+        Expression = {
+            if ($_.Name -match "Qualcomm|Modem|AT|Diagnostics|NDIS") { 0 } else { 1 }
+        }
+    }, @{ Expression = { $_.AttachedTo } }
+
+    # ✅ 여기! (네가 말한 라인)
+    # $list = $list | Where-Object { $_.Name -match "Qualcomm|HS-USB|Modem|AT|Diag|Diagnostics|Quectel|FM|Mobile" }
+
+    return $list
+}
+
+function Get-NdisDevicesWithIp {
+
+    $out = @()
+
+    # ✅ 후보 키워드 (필요하면 여기만 추가하면 됨)
+    $want = "RNDIS|Remote NDIS|NDIS|MBIM|WWAN|Mobile|Broadband|Cellular|Qualcomm|Quectel|Fibocom|Sierra|Telit|USB"
+
+    try {
+        $nads = Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop
+        $cfgs = Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction Stop
+    } catch {
+        $nads = Get-WmiObject Win32_NetworkAdapter -ErrorAction SilentlyContinue
+        $cfgs = Get-WmiObject Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue
+    }
+
+    $cfgByIndex = @{}
+    foreach ($c in $cfgs) { $cfgByIndex[$c.Index] = $c }
+
+    foreach ($nad in $nads) {
+
+        # 상태/PNP 없는 건 스킵
+        if (-not $nad.PNPDeviceID) { continue }
+
+        $desc = (($nad.Description + " " + $nad.Name + " " + $nad.NetConnectionID) -replace "\s+"," ").Trim()
+
+        # 가상/터널/VPN류 제외
+        if ($desc -match "Virtual|VMware|Hyper-V|Loopback|TAP|VPN|Bluetooth") { continue }
+
+        # ✅ Wi-Fi/무선/Realtek 류 제외 (UE RNDIS만 남기기)
+        if ($desc -match "Wi-?Fi|Wireless|WLAN|Realtek") { continue }
+
+
+        # ✅ IP 유무와 관계 없이 "후보 어댑터"를 먼저 잡는다
+        if ($desc -notmatch $want) { continue }
+
+        $ip = $null
+        $cfg = $cfgByIndex[$nad.Index]
+        if ($cfg -and $cfg.IPAddress) {
+            $ipv4 = $cfg.IPAddress | Where-Object {
+                $_ -match '^\d+\.\d+\.\d+\.\d+$' -and $_ -notlike "169.254.*"
+            } | Select-Object -First 1
+            if ($ipv4) { $ip = $ipv4 }
+        }
+
+        $out += [PSCustomObject]@{
+            Ip          = $ip          # ✅ 없을 수도 있음 (중요)
+            PnpDeviceID = $nad.PNPDeviceID
+            Desc        = $desc
+        }
+    }
+
+    return $out
 }
 
 # ======================
@@ -685,6 +813,34 @@ function Trim-RichTextBox {
     }
 }
 
+function Get-UsbBaseKeyFromPnpId {
+    param([string]$PnpId, [string]$FallbackKey)
+
+    if ($PnpId) {
+        $parts = $PnpId -split '\\'
+        $root  = $parts[0]
+        $dev   = if ($parts.Length -ge 2) { $parts[1] } else { $null }
+        $inst  = if ($parts.Length -ge 3) { $parts[2] } else { $null }
+
+        if ($dev) { $dev = ($dev -replace "&MI_\d{2}", "") }
+
+        if ($inst) {
+            # ✅ "6&xxxx&0&0000" / "6&xxxx&0&0002" 같은 꼬리(인터페이스별 suffix) 제거
+            if ($inst -match "^(.*)&0&\d+$") {
+                $inst = $matches[1] + "&0"
+            } elseif ($inst -match "^(.*)&\d{4}$") {
+                $inst = $matches[1]
+            }
+        }
+
+        if ($root -and $dev -and $inst) { return "$root\$dev\$inst" }
+        if ($root -and $dev)            { return "$root\$dev" }
+    }
+    
+    if ($FallbackKey) { return "FALLBACK:$FallbackKey" }
+    return $null
+}
+
 # ======================
 # Config Save / Load
 # ======================
@@ -695,6 +851,20 @@ function Save-Config {
 
     $cfg = @{
         ServerIp = $textServerIp.Text
+
+        # ✅ UE1/UE2 순서(매핑) 저장
+        Mapping = @{
+            UE1Key = $global:UE1Key
+            UE2Key = $global:UE2Key
+            UE1 = @{
+                IP  = $global:UE1Info.IP
+                COM = $global:UE1Info.ComPort
+            }
+            UE2 = @{
+                IP  = $global:UE2Info.IP
+                COM = $global:UE2Info.ComPort
+            }
+        }
 
         UE1 = @{
             Enable = $checkUE1.Checked
@@ -724,7 +894,7 @@ function Save-Config {
     }
 
     try {
-        $json = $cfg | ConvertTo-Json -Depth 5
+        $json = $cfg | ConvertTo-Json -Depth 6
         $json | Set-Content -Path $Path -Encoding UTF8
         [System.Windows.Forms.MessageBox]::Show("Config saved:`n$Path", "Save Config") | Out-Null
     } catch {
@@ -748,6 +918,27 @@ function Load-Config {
 
         # Server IP
         if ($cfg.ServerIp) { $textServerIp.Text = $cfg.ServerIp }
+
+        # ✅ UE1/UE2 순서(매핑) 복원
+        if ($cfg.Mapping) {
+
+            if ($cfg.Mapping.UE1Key) { $global:UE1Key = [string]$cfg.Mapping.UE1Key }
+            if ($cfg.Mapping.UE2Key) { $global:UE2Key = [string]$cfg.Mapping.UE2Key }
+
+            # (추천) reboot 복원 로직도 같이 타게 fingerprint에도 넣어둠
+            $global:LastUEFingerprint.UE1 = @{
+                Key = $global:UE1Key
+                IP  = [string]$cfg.Mapping.UE1.IP
+                COM = [string]$cfg.Mapping.UE1.COM
+            }
+            $global:LastUEFingerprint.UE2 = @{
+                Key = $global:UE2Key
+                IP  = [string]$cfg.Mapping.UE2.IP
+                COM = [string]$cfg.Mapping.UE2.COM
+            }
+
+            Add-Log "Loaded UE mapping from config: UE1Key=$($global:UE1Key), UE2Key=$($global:UE2Key)" $colorDefaultLog
+        }
 
         # ---- UE1 ----
         if ($cfg.UE1) {
@@ -787,6 +978,9 @@ function Load-Config {
             }
         }
 
+        # ✅ 키 복원 후 즉시 재탐색해서 Device Info 라벨도 반영
+        Detect-AndMapDevices
+
         [System.Windows.Forms.MessageBox]::Show("Config loaded.`n$Path", "Load Config") | Out-Null
     } catch {
         [System.Windows.Forms.MessageBox]::Show("Failed to load config: $($_.Exception.Message)", "Load Config Error") | Out-Null
@@ -818,135 +1012,215 @@ function Update-DeviceInfoLabels {
     }
 }
 
-function Detect-AndMapDevices {
-
-    # 기존 UE IP 기억
-    $oldUE1IP = $global:UE1Info.IP
-    $oldUE2IP = $global:UE2Info.IP
-
-    # 현재 상태 읽기
-    $ips    = Get-NdisIpList
-    $modems = Get-ModemPorts
-
-    $newUE1IP = $null
-    $newUE2IP = $null
-
-    # ===== 1) IP 매핑 =====
-
-    if ($ips.Count -eq 1) {
-        # ★ IP 가 1개만 있으면 무조건 UE1 로 본다
-        $newUE1IP = $ips[0]
-        $newUE2IP = $null
-    }
-    else {
-        # IP 가 0개 또는 2개 이상일 때는
-        #   - 이전 IP 가 살아있으면 같은 UE 에 유지
-        #   - 남은 IP 는 빈 슬롯에 순서대로 할당
-
-        $ipList = @()
-        $ipList += $ips
-
-        if ($oldUE1IP -and ($ipList -contains $oldUE1IP)) {
-            $newUE1IP = $oldUE1IP
-            $ipList   = $ipList | Where-Object { $_ -ne $oldUE1IP }
-        }
-        if ($oldUE2IP -and ($ipList -contains $oldUE2IP)) {
-            $newUE2IP = $oldUE2IP
-            $ipList   = $ipList | Where-Object { $_ -ne $oldUE2IP }
-        }
-
-        foreach ($ip in $ipList) {
-            if (-not $newUE1IP) { $newUE1IP = $ip; continue }
-            if (-not $newUE2IP) { $newUE2IP = $ip; continue }
-        }
-    }
-
-    $global:UE1Info.IP = $newUE1IP
-    $global:UE2Info.IP = $newUE2IP
-
-    # ===== 2) 모뎀(COM 포트) 매핑 (기존 규칙 유지) =====
-    $global:UE1Info.ModemName = $null
-    $global:UE1Info.ComPort   = $null
-    $global:UE2Info.ModemName = $null
-    $global:UE2Info.ComPort   = $null
-
-    if ($modems.Count -eq 2) {
-        # 2대일 때는 교차 매핑
-        $global:UE1Info.ModemName = $modems[1].Name
-        $global:UE1Info.ComPort   = $modems[1].AttachedTo
-
-        $global:UE2Info.ModemName = $modems[0].Name
-        $global:UE2Info.ComPort   = $modems[0].AttachedTo
-    }
-    else {
-        if ($modems.Count -ge 1) {
-            $global:UE1Info.ModemName = $modems[0].Name
-            $global:UE1Info.ComPort   = $modems[0].AttachedTo
-        }
-        if ($modems.Count -ge 2) {
-            $global:UE2Info.ModemName = $modems[1].Name
-            $global:UE2Info.ComPort   = $modems[1].AttachedTo
-        }
-    }
-
-    Update-DeviceInfoLabels
-
-    # 디버깅용 로그
-    $ipListStr    = if ($ips.Count)    { $ips -join ", " }             else { "(none)" }
-    $modemPortStr = if ($modems.Count) { $modems.AttachedTo -join ", " } else { "(none)" }
-
-    Add-Log "Detected NDIS IP(s): $ipListStr  /  Modem port(s): $modemPortStr" $colorDefaultLog
+function global:Get-UEStateString {
+    param(
+        [Parameter(Mandatory=$true)][string]$UE,
+        [Parameter(Mandatory=$true)]$Info
+    )
+    $ip  = if ($Info.IP)      { $Info.IP }      else { "-" }
+    $com = if ($Info.ComPort) { $Info.ComPort } else { "-" }
+    return "$UE(IP=$ip, COM=$com)"
 }
 
+function Save-UEFingerprint {
+
+    if ($global:UE1Key) {
+        $global:LastUEFingerprint.UE1 = @{
+            Key = $global:UE1Key
+            IP  = $global:UE1Info.IP
+            COM = $global:UE1Info.ComPort
+        }
+    } else {
+        $global:LastUEFingerprint.UE1 = $null
+    }
+
+    if ($global:UE2Key) {
+        $global:LastUEFingerprint.UE2 = @{
+            Key = $global:UE2Key
+            IP  = $global:UE2Info.IP
+            COM = $global:UE2Info.ComPort
+        }
+    } else {
+        $global:LastUEFingerprint.UE2 = $null
+    }
+
+    Add-Log "Saved UE fingerprint before reboot." $colorDefaultLog
+}
+
+function Detect-AndMapDevices {
+
+    $modems = Get-ModemPorts
+    $ndis   = Get-NdisDevicesWithIp
+
+    $map = @{}
+
+    # ---- Modem (COM) -> map ----
+    foreach ($m in $modems) {
+        $key = Get-UsbBaseKeyFromPnpId $m.PnpDeviceID $m.AttachedTo
+        if (-not $key) { continue }
+
+        if (-not $map.ContainsKey($key)) {
+            $map[$key] = [PSCustomObject]@{ IP=$null; ModemName=$null; ComPort=$null }
+        }
+        $map[$key].ModemName = $m.Name
+        $map[$key].ComPort   = $m.AttachedTo
+    }
+
+    # ---- NDIS (IP optional) -> map ----
+    foreach ($n in $ndis) {
+        $key = Get-UsbBaseKeyFromPnpId $n.PnpDeviceID ($n.Ip)
+        if (-not $key) { $key = "FALLBACK:" + $n.Desc }
+        if (-not $key) { continue }
+
+        if (-not $map.ContainsKey($key)) {
+            $map[$key] = [PSCustomObject]@{ IP=$null; ModemName=$null; ComPort=$null }
+        }
+        if ($n.Ip) { $map[$key].IP = $n.Ip }
+    }
+
+    $keys = @($map.Keys)
+
+    # ✅✅ 여기서 복원해야 함 (map 채운 다음)
+    if ($global:LastUEFingerprint.UE1 -and ($keys -contains $global:LastUEFingerprint.UE1.Key)) {
+        $global:UE1Key = $global:LastUEFingerprint.UE1.Key
+    }
+    if ($global:LastUEFingerprint.UE2 -and ($keys -contains $global:LastUEFingerprint.UE2.Key)) {
+        $global:UE2Key = $global:LastUEFingerprint.UE2.Key
+    }
+
+    # ---- UE1/UE2 고정키 유지(있는데 사라졌으면 초기화) ----
+    if ($global:UE1Key -and ($keys -notcontains $global:UE1Key)) { $global:UE1Key = $null }
+    if ($global:UE2Key -and ($keys -notcontains $global:UE2Key)) { $global:UE2Key = $null }
+
+    # ---- 빈 슬롯 채우기 ----
+    $remain = @($keys | Sort-Object)
+    if ($global:UE1Key) { $remain = @($remain | Where-Object { $_ -ne $global:UE1Key }) }
+    if ($global:UE2Key) { $remain = @($remain | Where-Object { $_ -ne $global:UE2Key }) }
+
+    if (-not $global:UE1Key -and $remain.Count -ge 1) {
+        $global:UE1Key = $remain[0]
+        $remain = @($remain | Select-Object -Skip 1)
+    }
+    if (-not $global:UE2Key -and $remain.Count -ge 1) {
+        $global:UE2Key = $remain[0]
+    }
+
+    # ---- UE1/UE2 Info 채우기 ----
+    $global:UE1Info.IP        = if ($global:UE1Key) { $map[$global:UE1Key].IP } else { $null }
+    $global:UE1Info.ModemName = if ($global:UE1Key) { $map[$global:UE1Key].ModemName } else { $null }
+    $global:UE1Info.ComPort   = if ($global:UE1Key) { $map[$global:UE1Key].ComPort } else { $null }
+
+    $global:UE2Info.IP        = if ($global:UE2Key) { $map[$global:UE2Key].IP } else { $null }
+    $global:UE2Info.ModemName = if ($global:UE2Key) { $map[$global:UE2Key].ModemName } else { $null }
+    $global:UE2Info.ComPort   = if ($global:UE2Key) { $map[$global:UE2Key].ComPort } else { $null }
+
+    Update-DeviceInfoLabels
+}
+
+$global:RebootStableCount = 0
+
 function Start-RebootDetect {
-    # 이전 타이머 있으면 정리
+    param(
+        [bool]$ExpectUE1 = $true,
+        [bool]$ExpectUE2 = $true
+    )
+
+    # Expect 값 고정 (Tick 스코프 문제 방지)
+    $global:RebootExpectUE1 = [bool]$ExpectUE1
+    $global:RebootExpectUE2 = [bool]$ExpectUE2
+
     if ($global:RebootTimer) {
-        try {
-            $global:RebootTimer.Stop()
-            $global:RebootTimer.Dispose()
-        } catch {}
+        try { $global:RebootTimer.Stop(); $global:RebootTimer.Dispose() } catch {}
         $global:RebootTimer = $null
     }
 
+    Reset-UEMapping -ResetKeys $true -ResetInfo $true
+
     $global:RebootDetectTry = 0
+    $global:RebootStableCount = 0
+
     $global:RebootTimer = New-Object System.Windows.Forms.Timer
-    $global:RebootTimer.Interval = 3000  # 3초마다 재시도 (원하면 2000/5000 등으로 조절)
+    $global:RebootTimer.Interval = 3000
+
+    $global:RebootMaxTry = 40
 
     $global:RebootTimer.Add_Tick({
         $global:RebootDetectTry++
 
         Detect-AndMapDevices
 
-        # 최소 한 개 UE라도 COM 포트가 잡히면 성공으로 간주
-        if ($global:UE1Info.ComPort -or $global:UE2Info.ComPort) {
-            Add-Log "Reboot completed. Device info re-detected (try $($global:RebootDetectTry))." $colorDefaultLog
-            $global:RebootTimer.Stop()
-            $global:RebootTimer.Dispose()
-            $global:RebootTimer = $null
+        # 장치 존재 여부
+        $hasAny = ([bool]$global:UE1Info.IP) -or ([bool]$global:UE2Info.IP)
+
+        if ($hasAny) {
+
+            $ue1Ok = (-not $global:RebootExpectUE1) -or ([bool]$global:UE1Info.IP)
+            $ue2Ok = (-not $global:RebootExpectUE2) -or ([bool]$global:UE2Info.IP)
+
+
+            if ($ue1Ok -and $ue2Ok) {
+                $global:RebootStableCount++
+                $st1 = Get-UEStateString -UE "UE1" -Info $global:UE1Info
+                $st2 = Get-UEStateString -UE "UE2" -Info $global:UE2Info
+                Add-Log "Reboot detect OK ($($global:RebootStableCount)/2), try=$($global:RebootDetectTry) | $st1 | $st2" $colorDefaultLog
+
+                if ($global:RebootStableCount -ge 2) {
+                    $st1 = Get-UEStateString -UE "UE1" -Info $global:UE1Info
+                    $st2 = Get-UEStateString -UE "UE2" -Info $global:UE2Info
+                    Add-Log "Reboot completed. Device info stabilized. | $st1 | $st2" $colorDefaultLog
+
+                    try { $global:RebootTimer.Stop(); $global:RebootTimer.Dispose() } catch {}
+                    $global:RebootTimer = $null
+                }
+                return
+            } else {
+                $global:RebootStableCount = 0
+            }
+
+        } else {
+            Add-Log "RebootDetect: no devices yet (NDIS/COM empty). try=$($global:RebootDetectTry)" $colorDefaultLog
         }
-        elseif ($global:RebootDetectTry -ge 10) {
-            # 총 10번(=30초) 시도 후 포기
-            Add-Log "Reboot detect timeout. Please check USB/NDIS and try manual Detect again." $colorDefaultLog
-            $global:RebootTimer.Stop()
-            $global:RebootTimer.Dispose()
-            $global:RebootTimer = $null
+
+        # ✅ UE로 인정할 PNP 키워드(너 로그 기준 Qualcomm 05C6)
+        $ueKeyPattern = "VID_05C6&PID_90E7"
+
+        if ($global:UE1Key -and ($global:UE1Key -notmatch $ueKeyPattern)) { $global:UE1Key = $null }
+        if ($global:UE2Key -and ($global:UE2Key -notmatch $ueKeyPattern)) { $global:UE2Key = $null }
+
+        # ---- timeout / wait 처리 ----
+        if (($global:RebootDetectTry % 10) -eq 0) {
+            try {
+                $cfgs = Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled }
+                $nads = Get-CimInstance Win32_NetworkAdapter
+                $nadByIndex = @{}
+                foreach ($n in $nads) { $nadByIndex[$n.Index] = $n }
+
+                $lines = @()
+                foreach ($c in $cfgs) {
+                    $n = $nadByIndex[$c.Index]
+                    if (-not $n) { continue }
+                    $d = (($n.Description + " " + $n.Name) + " " + ($n.NetConnectionID)) -replace "\s+"," "
+                    $ips = @($c.IPAddress) -join ","
+                    $lines += "IDX=$($c.Index) IP=[$ips] DESC=[$d]"
+                }
+
+                if ($lines.Count -gt 0) {
+                    Add-Log "DEBUG(IPEnabled adapters):`n  - " + ($lines -join "`n  - ") $colorDefaultLog
+                }
+            } catch {}
         }
-        else {
+
+        if ($global:RebootDetectTry -ge $global:RebootMaxTry) {
+            Add-Log "Reboot detect timeout ($global:RebootMaxTry tries). Please check USB/NDIS and try manual Detect again." $colorDefaultLog
+            try { $global:RebootTimer.Stop(); $global:RebootTimer.Dispose() } catch {}
+            $global:RebootTimer = $null
+        } else {
             Add-Log "Waiting UE device to re-enumerate... (try $($global:RebootDetectTry))" $colorDefaultLog
         }
     })
 
     $global:RebootTimer.Start()
 }
-
-# Swap UE1 <-> UE2
-$btnSwapUE.Add_Click({
-    $tmp = $global:UE1Info
-    $global:UE1Info = $global:UE2Info
-    $global:UE2Info = $tmp
-    Update-DeviceInfoLabels
-    Add-Log "Swapped UE1 and UE2 mapping." $colorDefaultLog
-})
 
 function Send-AT-ToUE {
     param(
@@ -959,13 +1233,13 @@ function Send-AT-ToUE {
 
     if (-not $info.ComPort) {
         Add-Log "$($UE): modem COM port not set." $Color
-        return
+        return $false
     }
 
     $cmd = $Command.Trim()
     if ($cmd -eq "") {
         Add-Log "No command to send." $Color
-        return
+        return $false
     }
 
     $send = $cmd + "`r`n"
@@ -985,7 +1259,6 @@ function Send-AT-ToUE {
             $sp.DtrEnable    = $true
             $sp.RtsEnable    = $true
             $sp.NewLine      = "`r`n"
-
             $sp.Open()
             $portOpened = $true
         } catch {
@@ -995,7 +1268,7 @@ function Send-AT-ToUE {
 
     if (-not $portOpened) {
         Add-Log "[$UE] Error: COM port $portName is not available (timeout / in use)." $Color
-        return
+        return $false
     }
 
     try {
@@ -1010,9 +1283,7 @@ function Send-AT-ToUE {
         while ($sw.ElapsedMilliseconds -lt 2000) {
             try {
                 $chunk = $sp.ReadExisting()
-                if ($chunk -and $chunk.Length -gt 0) {
-                    [void]$builder.Append($chunk)
-                }
+                if ($chunk -and $chunk.Length -gt 0) { [void]$builder.Append($chunk) }
             } catch {}
             Start-Sleep -Milliseconds 100
         }
@@ -1022,23 +1293,25 @@ function Send-AT-ToUE {
             $respLines = $resp -split "`r?`n"
             foreach ($line in $respLines) {
                 $clean = $line.Trim()
-                if ($clean -ne "") {
-                    Add-Log "[$UE] RX $($portName): $clean" $Color
-                }
+                if ($clean -ne "") { Add-Log "[$UE] RX $($portName): $clean" $Color }
             }
         } else {
             Add-Log "[$UE] RX $($portName): (no data)" $Color
         }
-    } catch {
+
+        return $true   # ✅ 성공 리턴
+    }
+    catch {
         Add-Log "[$UE] Error on $($portName): $($_.Exception.Message)" $Color
-    } finally {
+        return $false
+    }
+    finally {
         if ($sp) {
             try { if ($sp.IsOpen) { $sp.Close() } } catch {}
             try { $sp.Dispose() } catch {}
         }
     }
 }
-
 
 $btnSend.Add_Click({
     $cmd = $txtCmd.Text
@@ -1057,14 +1330,30 @@ $btnCFUN1.Add_Click({
 })
 
 $btnReboot.Add_Click({
-    # 1) 선택된 UE 들에 Reboot AT 전송
+
+    Save-UEFingerprint   # ⭐ 여기 추가
+
+    $expectUE1 = [bool]$checkAtUE1.Checked
+    $expectUE2 = [bool]$checkAtUE2.Checked
+
     if ($checkAtUE1.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE1" $colorUE1 }
     if ($checkAtUE2.Checked) { Send-AT-ToUE "AT+CFUN=1,1" "UE2" $colorUE2 }
 
-    Add-Log "Reboot command sent. Waiting for UE(s) to come back..." $colorDefaultLog
+    Add-Log "Reboot command sent. Waiting for UE(s) to come back..."
+    Start-RebootDetect -ExpectUE1 $expectUE1 -ExpectUE2 $expectUE2
+})
 
-    # 2) Reboot 후 주기적으로 Device Info 재검출
-    Start-RebootDetect
+# Swap UE1 <-> UE2
+# Swap UE1 <-> UE2
+$btnSwapUE.Add_Click({
+    $tmpK = $global:UE1Key
+    $global:UE1Key = $global:UE2Key
+    $global:UE2Key = $tmpK
+
+    Detect-AndMapDevices
+    Save-UEFingerprint   # ✅ 스왑한 순서를 fingerprint에도 반영
+
+    Add-Log "Swapped UE1 and UE2 mapping." $colorDefaultLog
 })
 
 # ======================
@@ -1437,6 +1726,8 @@ $buttonRouteDelete.Add_Click({
 # Form Shown: 초기 디바이스 매핑 + 설정 자동 로드
 # ======================
 $form.Add_Shown({
+    Detect-AndMapDevices
+    Start-Sleep -Milliseconds 800
     Detect-AndMapDevices
 
     if (Test-Path $global:ConfigFilePath) {
